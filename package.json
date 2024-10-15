@@ -1,0 +1,12 @@
+{
+  "type": "module",
+  "devDependencies": {
+    "@types/node": "^22.5.4",
+    "tsx": "^4.19.0",
+    "vitest": "^2.1.2"
+  },
+  "scripts": {
+    "dev": "npx tsx --watch server.js",
+    "test": "vitest --bail 1"
+  }
+}

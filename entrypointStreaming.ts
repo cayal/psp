@@ -1,7 +1,8 @@
 import { PukableSlotPocket as PukableSlotPocket } from './htmlSlotPocketing';
 import { FSPeep } from './filePeeping.js';
-import { HData, LinkPeeps, LinkPeepLocator, PLink, PeepedLinks, QF, LinkLocator, indeedHtml, PLinkLocable } from './linkPeeping.js';
-import { PP } from './ppstuff.js';
+import { HData, LinkPeeps, LinkPeepLocator, PLink, PeepedLinks, QF, LinkLocator, indeedHtml, PLinkLocable, Queried, HconLensMap } from './linkPeeping.js';
+import { PP, pprintProblem } from './ppstuff.js';
+import { CursedDataGazer } from './evilCursing';
 
 let ti = `<!doctype html>
 <html>
@@ -25,17 +26,16 @@ let ti = `<!doctype html>
 </html>`
 
 export class PukableEntrypoint {
-    id
-    bodyPreamble
-    postBodyLens
-    reloaderScript
-    hostClose
-    templateClose
-    ownLink
+    id: symbol
+    bodyPreamble: string
+    reloaderScript: string
+    templateClose: string
+    hostClose: string
+    ownLink: PLink & Queried & { type: 'html' }
 
-    #gazer
+    #gazer: CursedDataGazer
     #bodyBarfer: PukableSlotPocket
-    #bodyPartLensMap
+    #bodyPartLensMap: HconLensMap
 
     #link
     #preambleBarfer
@@ -50,6 +50,10 @@ export class PukableEntrypoint {
 
 
     constructor(rootLoc: PLinkLocable, relpath: string, hostTagName = "psp", reloaderScript = '') {
+        if (!relpath) {
+            throw new TypeError('Missing relpath.')
+        }
+
         let ownLink = indeedHtml(rootLoc(relpath)('.'))
 
         this.id = Symbol(PP.shortcode(`@${ownLink.relpath}${ownLink.fragment || ''}|`))
@@ -77,52 +81,14 @@ export class PukableEntrypoint {
     }
 
     getAssociatedFilenames() {
-        return [this.fullPath, ...this.#bodyBarfer.slurps]
-    }
-
-    traceDeps() {
-        const con = this.#frontbuf.join('')
-        let dbgLineNo = 1;
-        let inComment;
-        let i = 0;
-        let match;
-
-        while (i < con.length) {
-            let cur = con.slice(i)
-
-            if (cur.startsWith('\n')) {
-                dbgLineNo += 1
-                i += 1
-                continue
-            }
-
-            if (inComment) {
-                inComment = !cur.startsWith('-->')
-                i += 1
-                continue
-            }
-
-            if (match = cur.match(this.#slurpFromPattern)) {
-                let subTarget = match[1].split("#")[0]
-                let subPukable = new PukableSlotPocket(subTarget, [])
-                if (this.#deps.includes(this.fullPath)) {
-                    this.printTagProblem(dbgLineNo, `Circular dependency: ${this.#deps.join('->')}->${subPukable.getOwnFilename()}`, true)
-                    return []
-                }
-                let subdeps = subPukable.slurpSubPockets()
-                this.#deps.push(...subdeps)
-                i += 1
-                continue
-            }
-
-            i += 1
-        }
-
-        return [this.fullPath, ...this.#deps]
+        return [this.ownLink.relpath, ...this.#bodyBarfer.slurps]
     }
 
     *blowChunks() {
-        yield this.preBodyLens?.image || ''
+        const preBody = this.#gazer.getLens(this.#bodyPartLensMap.preBody).image ?? ''
+        const postBody = this.#gazer.getLens(this.#bodyPartLensMap.postBody).image ?? ''
+
+        yield preBody
         yield this.reloaderScript
         yield this.#bodyBarfer.styleContent.join('\n')
         yield this.bodyPreamble
@@ -130,7 +96,7 @@ export class PukableEntrypoint {
         yield this.templateClose
         yield this.#bodyBarfer.slotEnjoyers.join('\n')
         yield this.hostClose
-        yield this.postBodyLens?.image || ''
+        yield postBody
     }
 }
 

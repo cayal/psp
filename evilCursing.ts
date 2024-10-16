@@ -5,6 +5,64 @@ import { format } from "util"
 
 const sliceStyleCoord = (i: number, l: number) => i < 0 ? Math.max(0, l + i) : Math.min(l, 0 + i)
 
+export type Lines = {
+    at: string,
+    before: string[],
+    after: string[]
+}
+export type LensOptions = {
+    includeConfabulated: boolean,
+    includeDestroyed: boolean,
+    creed: {
+        [sigilName: string]: 'prosyletize' | 'shun'
+    }
+}
+
+export type CursedRangedOpRes = {
+    chars: string,
+    endSourceLine: number,
+    endSourceOffset: number
+}
+
+export type CLOCPointer = { voice: string, sigils: string[], truth: number, linenoTruth: number }
+export interface CursedLens {
+        image: string,
+        lensOpts: string,
+        invalidatePointers: () => void,
+        refocus: (newOpts: LensOptions) => void,
+        point: (offset: number) => CLOCPointer,
+        shine: (startOffset?: number) => Generator<CLOCPointer>
+        selectOnce: (lensOpts: LensOptions) => string,
+        replaceBySigil: (replacingSigilName: string, content: string, addSigils: string[]) => string[],
+        lensedCapture: (pattern: RegExp, o: number) => { 
+            index: number, 
+            startTruth: number, 
+            endTruth: number, 
+            groups: RegExpExecArray
+        },
+        lensedDestroy: (offset, count) => CursedRangedOpRes
+        lensedIntrude: (offset: number, content: string, sigils: string[]) => number
+        lensedLiftRanges(...cutPointOffsets: [number, number][]): CursedDataGazer[]
+        dichotomousJudgement: (entryPattern: string|RegExp,
+            exitPattern: string|RegExp,
+            sigil?: string,
+            encompass?: boolean
+        ) => CursedRangedOpRes[]
+        stashCreed: (sigil: string) => void
+        popCreed: () => void
+        lensedBrandRange: (sigil: string, 
+            encompass: boolean, 
+            start: number, 
+            end: number, 
+            unbrand: boolean) => CursedRangedOpRes[]
+
+        takeSourceLines: (sourceLineNumber: number, 
+            contextBefore?: number, 
+            contextAfter?: number) => Lines 
+
+        summonBugs: (...debugStuff: any) => any
+}
+
 export class CursedDataGazer {
     id: Symbol
 
@@ -205,7 +263,7 @@ export class CursedDataGazer {
     }
 
 
-    static Cloc = class CursedLensOfRecollection {
+    static Cloc = class CursedLensOfRecollection implements CursedLens {
         static DefaultLens = { includeConfabulated: true, includeDestroyed: false, creed: {} }
 
         /** @type {CursedDataGazer} */

@@ -192,7 +192,7 @@ function Dimp(basis: FSPbv, changeTransmitter?: MessagePort): FSPbv & Dimp {
         let ws = getWatchSetd(changeTransmitter)
         for (let subw of ws) {
             if (subw.recurse) {
-                subw.recurse()
+                subw.recurse(changeTransmitter)
             }
         }
 

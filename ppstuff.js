@@ -138,7 +138,7 @@ export function pprintProblem(title, lineno, msg, asError, citationText={at: '',
             log('|' +Array(citationText.at.length).fill(underscore).join(''))
         }
         citationText.after.forEach(l => log('|' + l))
-        log('|' + Array(msg.length).fill('-').join(''))
+        log('|' + Array(Math.min(msg.length, 60)).fill('-').join(''))
     }
 
     log('| ' + msg)

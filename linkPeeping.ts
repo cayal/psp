@@ -73,7 +73,7 @@ function PLink(entrypoint: FSPeep, peep: FSPeep): PLink {
     }
 }
 
-type GazedMarkup = { gazer: CursedDataGazer, hasBody: boolean, fragmentNames: string[], lensNames: string[] }
+type GazedMarkup = { gazer: CursedDataGazer, hasBody: boolean, lensNames: HconLensMap }
 
 export type Queried = { type: PLink["type"] } & QF & {
     result: (
@@ -156,16 +156,18 @@ export type PLinkLocable = (atA: string) => LinkLocator
 export type LinkLocator = (toB: string) => Queried | { type: '404', reason: string }
 export type PeepedLinkResolution = { type: '404', reason: string } | (PLink)
 
-export const LinkPeepLocator: (_: LinkPeeps) => PLinkLocable = ({ rootAbs, links }: LinkPeeps) =>
-    (atA: string) => {
+export const LinkPeepLocator: (_: LinkPeeps) => PLinkLocable = ({ rootAbs, links }: LinkPeeps) => {
+    if (!rootAbs || !rootAbs.startsWith('/')) { throw new TypeError(`LPResolveRelative(): root '${rootAbs}' is not an abspath.`) }
+
+    return function makeLocator(atA: string) {
         const dbgInfo = `LPResolveRelative{rootAbs: ${rootAbs}}.atA(${atA})`
 
-        if (!rootAbs.startsWith('/')) { throw new TypeError(`${dbgInfo}: root is not an abspath.`) }
 
         atA = normalize(atA).target
         const itSaMe = (l: PLink) => (l.relpath == atA)
 
         if (!existsSync(atA)) {
+            console.error(links)
             throw new ReferenceError(`${dbgInfo}: '${atA}' does not exist.`)
         }
         else if (!links.some(itSaMe)) {
@@ -177,7 +179,7 @@ export const LinkPeepLocator: (_: LinkPeeps) => PLinkLocable = ({ rootAbs, links
             const resolveAbsolute = ({ query, fragment, target }) => {
                 let found: PLink;
                 if (!(found = links.find(x => x.webpath === target))) {
-                    return { type: '404' as const, reason: `Webpath ${target} not found in links: ${PP.o(links)}` }
+                    return { type: '404' as const, reason: `Tried ${join(selfPoint.relpath, target)}` }
                 }
 
                 else if (found.type === 'dir') {
@@ -194,15 +196,20 @@ export const LinkPeepLocator: (_: LinkPeeps) => PLinkLocable = ({ rootAbs, links
                     return resolveAbsolute({ query, fragment, target })
                 } else {
                     const candidate = resolve(selfPoint.cwd, target)
-                    const asWebpath = '/' + relative(rootAbs, candidate)
+                    const rootRelative = relative(rootAbs, candidate)
+                    if ( rootRelative.startsWith('.') ) {
+                        return { type: '404' as const, reason: `Can't access files upward from root directory.` }
+                    }
+                    const asWebpath = '/' + rootRelative
                     return resolveAbsolute({ query, fragment, target: asWebpath })
                 }
             }
         }
     }
+}
 
 
-type HconLensMap = {
+export type HconLensMap = {
     wholeFile: 'default',
     body?: string,
     preBody?: string,
@@ -238,8 +245,8 @@ export function HConLM(visions: CursedDataGazer, hasBody: boolean, fragmentNames
         const poBS = 'post' + bodySigil
         visions.brandRange(prBS, 0, preBodyEnd)
         visions.brandRange(poBS, postBodyStart)
-        visions.lens({ creed: { prBS: 'prosyletize' } }, prBS)
-        visions.lens({ creed: { poBS: 'prosyletize' } }, poBS)
+        visions.lens({ creed: { [prBS]: 'prosyletize' } }, prBS)
+        visions.lens({ creed: { [poBS]: 'prosyletize' } }, poBS)
         retVal.preBody = prBS
         retVal.postBody = poBS
     }

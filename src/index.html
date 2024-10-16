@@ -1,14 +1,19 @@
 <!doctype html>
+<!slurp from="./bar.html" as="foo-bar">
 <html lang="en">
   <head>
     <title>No title</title>
   </head>
   <body>
-    <!slurp from="../bar.html" as="foo-bar">
+    <style>
+      body {
+          background-color: #369;
+          color: #def;
+      }
+    </style>
     <section>
-      <p id="perry">Regular top-level DOM content</p>
+      <p id="perry">Regular top-level DOM content! Cool.</p>
       <foo-bar>And this is an addendum</foo-bar>
     </section>
   </body>
 </html>
-

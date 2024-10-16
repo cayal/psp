@@ -3,21 +3,20 @@ import { dirname } from "path"
 import { FSPeep } from "./filePeeping"
 import { PP, pprintProblem } from "./ppstuff.js"
 import { PLink, LinkPeeps, LinkPeepLocator, PeepedLinkResolution, QF, LinkLocator, indeedHtml, PLinkLocable, Queried } from "./linkPeeping"
-import { CursedDataGazer } from "./evilCursing"
+import { CursedDataGazer, CursedLens } from "./evilCursing"
 
 export class PukableSlotPocket {
 
-    lens
     rootLoc
     reprName
-    #gazer
-    #juiceLens
+    #gazer: CursedDataGazer
+    #juiceLens: CursedLens
     #ownLocator
     #ownLink: PLink & Queried & { type: 'html' }
     #includedFromChain
 
     /** @type {Object<string, PukableSlotPocket>} */
-    #ownSlurpMap = {}
+    #ownSlurpMap: {[as: string]: PukableSlotPocket} = {}
     #ownSlotNames = []
     #ownSlotEnjoyers = []
     #ownStyleContent = []
@@ -35,12 +34,12 @@ export class PukableSlotPocket {
         exit: new RegExp(`</${name}\\s*>$`),
     })
 
-    constructor(rootLoc: PLinkLocable, fromPath: string, includedFromChain = []) {
+    constructor(rootLoc: PLinkLocable, targetPath: string | (PLink & QF), includedFromChain = []) {
 
         this.rootLoc = rootLoc
-        this.#ownLocator = rootLoc(fromPath)
+        this.#ownLocator = typeof targetPath == 'string' ? rootLoc(targetPath) : rootLoc(targetPath.relpath)
 
-        this.#ownLink = indeedHtml(this.#ownLocator('.'))
+        this.#ownLink = indeedHtml(typeof targetPath == 'string' ? this.#ownLocator('.') : targetPath)
         this.reprName = `<PSP @="${this.#ownLink.relpath}">`
 
         const initStart = performance.now()
@@ -67,24 +66,26 @@ export class PukableSlotPocket {
         if (this.#ownLink.fragment) {
             if (!("fragments" in markupData.lensNames) || !markupData.lensNames.fragments[this.#ownLink.fragment]) {
                 throw new ReferenceError(
-                    `${fromPath} refers to fragment ${this.#ownLink.fragment},` +
-                    `but file only includes ${PP.o(markupData.fragmentNames)}`)
+                    `${targetPath} refers to fragment ${this.#ownLink.fragment},` +
+                    `but file only includes ${PP.o(markupData.lensNames.fragments)}`)
             }
 
             const lensName = markupData.lensNames.fragments[this.#ownLink.fragment]
-            const lens = this.#gazer
+            this.#juiceLens = this.#gazer.getLens(lensName)
+        } else if (markupData.hasBody) {
+            this.#juiceLens = this.#gazer.getLens(markupData.lensNames.body)
+        } else {
+            this.#juiceLens = markupData.gazer.getLens(markupData.lensNames.wholeFile)
         }
 
-        this.lens = this.#ownLink.content.getLens(lensName).refocus({ creed: { slurpDecl: 'shun', styleTag: 'shun' } })
-
-        if (!this.lens || !lensName) {
-            link.content.summonBugs()
-            pprintProblem(this.reprName, 0, `${link.content.id.description} is missing lens: ${lensName}.`, true)
+        if (!this.#juiceLens) {
+            this.#gazer.summonBugs()
+            pprintProblem(this.reprName, 0, `${this.#gazer.id.description} is missing lens.`, true)
         }
 
         this.slurpSubPockets()
         this.pocketOwnSlots()
-        this.slurpSlotEnjoyers()
+        this.slurpSlotSlippers()
         this.slurpStyles()
 
         const initEnd = performance.now()
@@ -92,38 +93,36 @@ export class PukableSlotPocket {
     }
 
     get ownFilename() {
-        return this.#ownLink.fsPath
+        return this.#ownLink.relpath
     }
 
     get assocFilenames() {
-        return [this.#ownLink.fsPath,
+        return [this.#ownLink.relpath,
         ...Object.values(this.#ownSlurpMap).flatMap(x => x.assocFilenames),
         ]
     }
 
     slurpSubPockets() {
-        const spsEnterPattern = '<slot-pocket-slurp '
+        const spsEnterPattern = '<!slurp '
         const spsExitPattern = '>'
-        const slurpSigil = 'slurpDecl'
+        const slurpSigil = PP.shortcode('slurpDecl')
 
-        const spses = this.lens.dichotomousJudgement(spsEnterPattern, spsExitPattern, slurpSigil)
+        const spses = this.#juiceLens.dichotomousJudgement(spsEnterPattern, spsExitPattern, slurpSigil)
         for (let { chars, endSourceLine } of spses) {
-            let match;
+            let match: RegExpMatchArray;
             if (!(match = chars.match(PukableSlotPocket.slurpDeclFromPattern))) {
-                pprintProblem(this.#ownLink.fullPath, endSourceLine, `Missing 'from' attribute in slurp tag.`, true)
+                pprintProblem(this.#ownLink.relpath, endSourceLine, `Missing 'from' attribute in slurp tag.`, true)
             }
             else {
-                let subLink;
-                try {
-                    subLink = LinkPeepLocator(this.#ownLocator, this.#ownLink.relpath, match[1])
-                } catch (e) {
-                    pprintProblem(this.#ownLink.fullPath, endSourceLine, `File '${match[1]}' not found: ${e}`, true, this.lens.takeSourceLines(endSourceLine, 3, 3))
+                let subLink = this.#ownLocator(match[1]);
+                if ("reason" in subLink) {
+                    pprintProblem(this.#ownLink.relpath, endSourceLine, `File '${match[1]}' not found: ${subLink.reason}`, true, this.#juiceLens.takeSourceLines(endSourceLine, 3, 3))
                 }
 
-                let subPukable = new PukableSlotPocket(this.#ownLocator, subLink.relpath, '.', this.#includedFromChain.concat(this))
+                let subPukable = new PukableSlotPocket(this.rootLoc, subLink, this.#includedFromChain.concat(this))
 
                 if (!(match = chars.match(PukableSlotPocket.slurpDeclAsPattern))) {
-                    pprintProblem(this.#ownLink.fullPath, endSourceLine, `Missing 'as' attribute in slurp tag.`, true)
+                    pprintProblem(this.#ownLink.relpath, endSourceLine, `Missing 'as' attribute in slurp tag.`, true)
                 } else {
                     let asName = match[1]
                     this.#ownSlurpMap[asName] = subPukable
@@ -136,35 +135,35 @@ export class PukableSlotPocket {
     pocketOwnSlots() {
         const slotOpenPattern = /^<slot [^<>]*name=['"]([^'"]+)['"][^<>]*>/
         const slotClosePattern = /<\/slot[^<>]*>$/
-        const slots = this.lens.dichotomousJudgement(slotOpenPattern, slotClosePattern, 'slotPocket')
+        const slots = this.#juiceLens.dichotomousJudgement(slotOpenPattern, slotClosePattern, 'slotPocket')
         for (let { chars, endSourceLine } of slots) {
             let match
             if ((match = chars.match(slotOpenPattern)) && (match?.[1]?.length > 0)) {
                 this.#ownSlotNames.push(match[1])
             } else {
-                pprintProblem(this.#ownLink.fullPath, endSourceLine, `Missing 'name' attribute in slot tag.`, true)
+                pprintProblem(this.#ownLink.relpath, endSourceLine, `Missing 'name' attribute in slot tag.`, true)
             }
         }
     }
 
     slurpStyles() {
-        const styleTags = this.lens.dichotomousJudgement('<style>', '</style>', 'styleTag')
+        const styleTags = this.#juiceLens.dichotomousJudgement('<style>', '</style>', 'styleTag')
         for (let { chars } of styleTags) {
             this.#ownStyleContent.push(chars)
         }
     }
 
-    slurpSlotEnjoyers() {
+    slurpSlotSlippers() {
         for (let tagName of (Object.keys(this.#ownSlurpMap))) {
             let { presence, entry, exit } = PukableSlotPocket.getNamedTagPatterns(tagName)
             let match;
-            if (!(match = this.lens.image.match(presence))) {
-                pprintProblem(this.#ownLink.fullPath, 1, `Lint: unused slurp <${tagName}>`, false)
+            if (!(match = this.#juiceLens.image.match(presence))) {
+                pprintProblem(this.#ownLink.relpath, 1, `Lint: unused slurp <${tagName}>`, false)
                 continue
             } else {
-                const usages = this.lens.dichotomousJudgement(entry, exit, tagName)
+                const usages = this.#juiceLens.dichotomousJudgement(entry, exit, tagName)
                 for (let { chars, endSourceLine } of usages) {
-                    this.lens.replaceBySigil(tagName, this.#ownSlurpMap[tagName].blowChunks(), ['juice'])
+                    this.#juiceLens.replaceBySigil(tagName, this.#ownSlurpMap[tagName].blowChunks(), ['juice'])
                     const match = chars.matchAll(PukableSlotPocket.slotEnjoyerPattern) || []
                     let foundSlots = []
                     for (let m of match) {
@@ -175,12 +174,13 @@ export class PukableSlotPocket {
                     const needs = [...this.#ownSlurpMap[tagName].slots.values()]
                     if (needs.some(n => !foundSlots.includes(n))) {
                         const missing = needs.filter(n => !foundSlots.includes(n)).map(s => `"${s}"`).join(', ')
-                        pprintProblem(this.#ownLink.fullPath, endSourceLine, `${tagName} has unfilled slots: ${missing}.`, false)
+                        pprintProblem(this.#ownLink.relpath, endSourceLine, `${tagName} has unfilled slots: ${missing}.`, false)
                     }
                 }
             }
 
         }
+
         return
     }
 
@@ -206,12 +206,14 @@ export class PukableSlotPocket {
     }
 
     blowChunks() {
-        return this.lens.image
+        return this.#juiceLens.image
     }
 }
 
 
+// @ts-ignore
 if (import.meta.vitest) {
+    // @ts-ignore
     const { test, expect } = import.meta.vitest
     let fsp = FSPeep({ entrypoint: 'testdata/psp' })
     let links = LinkPeeps({ entrypoint: fsp })

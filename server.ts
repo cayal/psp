@@ -81,24 +81,10 @@ const server = createSecureServer({
 
 const idxFSPeeps = webrootDir.peepReduce(((acc, peep) => peep.path.base == 'index.html' ? acc.concat(peep) : acc), [])
 process.stderr.write(PP.styles.pink + `\n> Using ${PP.ar(idxFSPeeps.map((i: any) => i.relpath))} as entrypoints. \n` + PP.styles.none)
-const webpathsToPukers = {}
-const relpathsToPukers = {}
+const webpathsToPukers: { [webpath: string]: PukableEntrypoint } = {}
+const relpathsToPukers: { [relpath: string]: PukableEntrypoint[] } = {}
 
-const buildOne = (loc: PLinkLocable, fromPeep: PLink) => {
-    const entrypoint = new PukableEntrypoint(loc, fromPeep.relpath, undefined, RELOADER_SCRIPT)
-
-    // const pukerData = { fst: iPeep, pLinks, pLink, entrypoint }
-    return null //pukerData
-}
-
-const pLinks = LinkPeeps({ entrypoint: webrootDir })
-const loc = LinkPeepLocator(pLinks)
-buildOne(loc, pLinks.links.find(l => l.relpath === 'src/index.html'))
-console.log("Ending it here ")
-process.exit(0)
-const build = (relpathToBuild?: string) => {
-    // Make fresh LinkPeeps, since files might have been created/deleted.
-    const pLinks = LinkPeeps({ entrypoint: webrootDir })
+const build = (pLinks: LinkPeeps, relpathToBuild?: string) => {
     const loc = LinkPeepLocator(pLinks)
 
     const buildSet = relpathToBuild ? [pLinks.links.find(l => l.relpath === relpathToBuild)] : idxFSPeeps
@@ -108,34 +94,42 @@ const build = (relpathToBuild?: string) => {
         return
     }
 
+    let entrypointsBuilt = []
     try {
         for (let iPeep of buildSet) {
-            let { pLink, entrypoint } = buildOne(loc, iPeep)
+            const entrypoint = new PukableEntrypoint(loc, iPeep.relpath, undefined, RELOADER_SCRIPT)
+            webpathsToPukers[entrypoint.ownLink.webpath] = entrypoint
 
-            webpathsToPukers[pLink.webpath] = { ifst: iPeep, pLink, entrypoint }
             const relpaths = entrypoint.getAssociatedFilenames()
+
             for (let rp of relpaths) {
                 if (!relpathsToPukers[rp]) {
-                    relpathsToPukers[rp] = [{ ifst: iPeep, pLink, entrypoint }]
+                    relpathsToPukers[rp] = [entrypoint]
                 } else {
-                    relpathsToPukers[rp].push({ ifst: iPeep, pLink, entrypoint })
+                    relpathsToPukers[rp].push(entrypoint)
                 }
             }
+            entrypointsBuilt.push(entrypoint)
         }
     } catch (e) {
         console.error(e)
         console.error("Ran into a problem building files.")
         cannotPuke = true
     }
-    return pLinks
+    return {
+        pLinks: pLinks,
+        entrypointsBuilt: entrypointsBuilt
+    }
 }
 
-let pppLinks = build()
 
-changeReceiver.addEventListener("message", (ev) => {
+build(LinkPeeps({ entrypoint: webrootDir }))
+
+
+changeReceiver.addEventListener("message", (ev: MessageEvent) => {
     let [mode, relpath] = ev.data.split(" ")
     if (mode == "change") {
-        build(relpath)
+        build(LinkPeeps({entrypoint: webrootDir}), relpath)
         changeTransmitter.postMessage(`built ${relpath}`)
     }
 })
@@ -150,31 +144,35 @@ server.on('stream', (stream, headers) => {
         stream.end()
     }
 
+    // Refresh LinkPeeps, since files might have been created/deleted.
+    const pLinks = LinkPeeps({ entrypoint: webrootDir })
+
     const path = headers[':path'] || '/'
 
     let fileMatch
-    let chunkProvider
+    let chunkProvider: PukableEntrypoint
     if (chunkProvider = webpathsToPukers[path]) {
         stream.respond({
             'content-type': 'text/html; charset=utf-8',
             ':status': 200,
         });
 
-        let { ifst, pLink } = chunkProvider
+        webpathsToPukers[chunkProvider.ownLink.webpath] = build(pLinks, chunkProvider.ownLink.relpath).entrypointsBuilt[0]
 
-        webpathsToPukers[pLink.webpath] = buildOne(ifst);
-
-        let { entrypoint, pLinks } = webpathsToPukers[pLink.webpath];
-        pppLinks = pLinks
+        let entrypoint  = webpathsToPukers[chunkProvider.ownLink.webpath]
 
         for (let v of entrypoint.blowChunks()) {
-            stream.write(v ?? '')
+            if (!v) {
+                console.warn('Warning: undefined value in stream')
+                continue
+            }
+            stream.write(v)
         }
         stream.end()
         return
 
     }
-    else if (fileMatch = LinkPeepLocator(pppLinks, WEBROOT, path)) {
+    else if (fileMatch = pLinks[path]) {
         stream.respond({
             'content-type': 'text/html; charset=utf-8',
             ':status': 200,
@@ -252,8 +250,8 @@ const websocket = createServer({ allowHalfOpen: true }, async (socket) => {
         if (mode == "built") {
             const pukerDatas = relpathsToPukers[pName]
             for (let p of pukerDatas) {
-                let wp = p.pLink.webpath
-                console.log(`Notifying websocket subscriber...\n`)
+                let wp = p.ownLink.webpath
+                console.info(`Notifying websocket subscriber...\n`)
                 process.stderr.write(`Writing '${wp}' to port ${socket.address().port}...\n`)
                 socket.write(prepareFrame(wp))
             }
@@ -261,7 +259,7 @@ const websocket = createServer({ allowHalfOpen: true }, async (socket) => {
     })
 
     socket.addListener("close", () => {
-        console.log(`Server closing. Writing 'SERVER_CLOSE' to port ${socket}...\n`)
+        console.info(`Server closing. Writing 'SERVER_CLOSE' to port ${socket}...\n`)
         socket.write(prepareFrame("SERVER_CLOSE"))
     })
 

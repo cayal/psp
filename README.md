@@ -24,7 +24,7 @@ file: bar.html
 PSP will parse other HTML files that `<!slurp` bar under a name, and interpolate slot contents
 `bar.html`'s content:
 
-[demonstration of slotting label behavior](docs/bonjour.png)
+![demonstration of slotting label behavior](docs/bonjour.png)
 
 For this file, the server will output, in order:
 

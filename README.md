@@ -39,27 +39,32 @@ For this file, the server will stream to the client, in order:
 ```
 
 2) A `<psp-host>` opening tag, and a `<template shadowrootmode="open"`> declaration;
-3) The `<!slurp>` declaration is skipped, and not included in the output;
-4) Everything up to, but not including, the `<foo-bar>`instance opening tag:
+3) Any `<style>` tags used by PSPs, having their contents combined;
+4) The `<!slurp>` declaration is skipped, and not included in the output;
+5) Everything up to, but not including, the `<foo-bar>`instance opening tag:
 ```html
     <section>
       <p id="perry">Regular top-level DOM content</p>
 ```
-5) The contents of `bar.html`:
+6) The contents of `bar.html`:
 ```html
 <h1>My favorite sentence</h1>
-<slot name="greeting">Hello there yall</slot>
+<slot name="greeting">Hello there y'all</slot>
 ```
-6) The `</foo-bar>` instance closing tag, is skipped, and not included in the output;
-7) The `<template>` tag opened in step 2 is closed, any tags utilizing slots are streamed, and the `<psp-host>` tag is closed:
+7) The `</foo-bar>` instance closing tag, is skipped, and not included in the output;
+8) The `<template>` tag opened in step 2 is closed, any tags utilizing slots are streamed (in this case, the span using `greeting`), and the `<psp-host>` tag is closed:
 ```html
     </template>
     <span slot="greeting">Bonjour, le monde!</span>
 </psp-host>
 `````
-8) The rest of the file.
+9) The rest of the file.
+
+Due to how `<template shadowrootmode="open">` works, the browser will substitute the placeholder content `Hello there y'all`
+with `<span>Bonjour, le monde!</span>` as soon as the client receives the `<span>` tag in the stream.
 
 # Installation
+
 PSP has no JavaScript dependencies for running other than a TypeScript interpreter for node versions <23.
 
 ## Running

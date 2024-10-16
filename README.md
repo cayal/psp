@@ -69,8 +69,8 @@ PSP has no JavaScript dependencies for running other than a TypeScript interpret
 
 ## Running
 1) TypeScript
-    a) Node >= 23: 0 dependencies, run with `node ./server.ts --experimental-strip-types=true`.
-    b) For Node versions under 23, PSP depends on `tsx` to execute. Run `npm install` to install.
+    a) Node >= 23: 0 dependencies, run the server with `node ./server.ts --experimental-strip-types=true`.
+    b) For Node versions under 23, PSP depends on `tsx` to execute. Run `npm install` to install and `npm run dev` to start the server.
 2) HTTPS
 Any method of generating a local certfile will work.
 The cert should be named `localhost.pem`, and the key should be named `localhost-key.pem`.

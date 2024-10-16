@@ -183,6 +183,8 @@ function Dimp(basis: FSPbv, changeTransmitter?: MessagePort): FSPbv & Dimp {
     }
 
     let watcher;
+    let lastTransmit = performance.now();
+
     function getWatcherd(changeTransmitter?: MessagePort) {
         if (!changeTransmitter) {
             throw new ReferenceError("Can't watch files without changeTransmitter.")
@@ -199,8 +201,12 @@ function Dimp(basis: FSPbv, changeTransmitter?: MessagePort): FSPbv & Dimp {
         if (changeTransmitter) {
             watcher = watch(dimp.path.base, { persistent: false, recursive: false }, (x, filename) => {
                 let changePath = join(dimp.relpath, filename ?? '')
-                process.stderr.write(`${changePath} changed on disk. \n`)
-                changeTransmitter.postMessage(`change ${changePath}`)
+                process.stderr.write(`${dimp.relpath}: ${changePath} changed on disk. \n`)
+                if (performance.now() - lastTransmit > 100) {
+                    process.stderr.write(`${dimp.relpath}: Posting 'change ${changePath}'. \n`)
+                    lastTransmit = performance.now()
+                    changeTransmitter.postMessage(`change ${changePath}`)
+                }
             })
         }
     }

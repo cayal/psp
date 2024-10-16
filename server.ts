@@ -9,32 +9,14 @@ import { HData, LinkPeeps, LinkPeepLocator, PLink, QF, PLinkLocable } from './li
 import { PukableSlotPocket } from './htmlSlotPocketing';
 import { FSPeep, FSPeepRoot } from './filePeeping';
 import { PP } from './ppstuff.js';
+import { Socket } from 'node:net';
 
 process.stderr.write(`Hi (${process.pid})\n`)
 
 let cannotPuke = false
 
 const WEBROOT = 'src'
-const RELOADER_SCRIPT = `\n<script>\n` +
-    `const _tryConnect = (() => { \n` +
-    `  if (!(window._updateSource) || (window._updateSource?.readyState === 3)) {\n` +
-    `    console.info('Trying to connect to source update notifier...');\n` +
-    `    if (window._updateSource = new WebSocket('ws://localhost/_updates')) {\n` +
-    `      console.info('Connected');\n` +
-    `      window._updateSource.onmessage = ((ev) => { \n` +
-    `        console.info(ev)\n` +
-    `        if (ev.data == new URL(window.location).pathname) {\n` +
-    `          console.log("Page changed. Refreshing...")\n` +
-    `          window.location.reload()\n` +
-    `        }\n` +
-    `      });\n` +
-    `    }\n` +
-    `  }\n` +
-    `});\n` +
-    `_tryConnect();\n` +
-    `setInterval(_tryConnect, 5000);\n` +
-    `</script>\n`
-
+const RELOADER_SCRIPT = '\n<script>\n' +  readFileSync('websocketReloading.js', 'utf-8') + '\n</script>\n'
 const { port1: changeReceiver, port2: changeTransmitter } = new MessageChannel()
 
 performance.mark('A')
@@ -102,13 +84,7 @@ const build = (pLinks: LinkPeeps, relpathToBuild?: string) => {
 
             const relpaths = entrypoint.getAssociatedFilenames()
 
-            for (let rp of relpaths) {
-                if (!relpathsToPukers[rp]) {
-                    relpathsToPukers[rp] = [entrypoint]
-                } else {
-                    relpathsToPukers[rp].push(entrypoint)
-                }
-            }
+            relpathsToPukers[entrypoint.ownLink.relpath] = [entrypoint]
             entrypointsBuilt.push(entrypoint)
         }
     } catch (e) {
@@ -124,7 +100,6 @@ const build = (pLinks: LinkPeeps, relpathToBuild?: string) => {
 
 
 build(LinkPeeps({ entrypoint: webrootDir }))
-
 
 changeReceiver.addEventListener("message", (ev: MessageEvent) => {
     let [mode, relpath] = ev.data.split(" ")
@@ -213,7 +188,16 @@ function headerExtract(lines) {
 }
 
 
-const WSOpcode = {
+type WSOpcode = {
+    cont: 0,
+    dtxt: 1,
+    dbin: 2,
+    clos: 8,
+    ping: 9,
+    pong: 10,
+}
+
+const wsOps: WSOpcode = {
     cont: 0b0000,
     dtxt: 0b0001,
     dbin: 0b0010,
@@ -231,7 +215,7 @@ const Enc = new TextEncoder()
 */
 function prepareFrame(message) {
     const thisisMyFinalFrame = 0b10000000
-    const byte1 = thisisMyFinalFrame | WSOpcode.dtxt
+    const byte1 = thisisMyFinalFrame | wsOps.dtxt
     const msg = Enc.encode(message)
     if (msg.byteLength > 125) {
         console.warn(`Message too long and will be truncated: ${message}`)
@@ -243,60 +227,258 @@ function prepareFrame(message) {
     return Uint8Array.from([byte1, byte2, ...msg])
 }
 
-const websocket = createServer({ allowHalfOpen: true }, async (socket) => {
+let pingCtr = 0
+function pingFrame(socketId: number) {
+    const thisisMyFinalFrame = 0b10000000
+    const byte1 = thisisMyFinalFrame | wsOps.ping
 
-    changeReceiver.addEventListener("message", (ev) => {
-        let [mode, pName] = ev.data.split(" ")
-        if (mode == "built") {
-            const pukerDatas = relpathsToPukers[pName]
-            for (let p of pukerDatas) {
-                let wp = p.ownLink.webpath
-                console.info(`Notifying websocket subscriber...\n`)
-                process.stderr.write(`Writing '${wp}' to port ${socket.address().port}...\n`)
-                socket.write(prepareFrame(wp))
+    const byte2 = 1
+    console.log("ping counter: " , pingCtr)
+    const endByte = (pingCtr++) % 256
+
+    return Uint8Array.from([byte1, byte2, endByte])
+}
+
+function pongFrame(data: number[]) {
+    let bytes = Uint8Array.from(data)
+    bytes[0] = bytes[0] & 0b11110000
+    bytes[0] = bytes[0] | wsOps.pong
+
+    return Uint8Array.from(bytes)
+}
+
+type WSDecodeRes = { opcode: keyof WSOpcode, data?: string | number[], error: false } | { error: true, reason: string }
+function decodeFrames(message: Buffer): WSDecodeRes {
+    const bytes = Uint8Array.from(message)
+    const isMasked = 0b10000000
+    if ((bytes[1] & isMasked) === 0) {
+       return { error: true, reason: 'Client sent an unmasked message.'}
+    }
+    
+    const fin = bytes[0] & 0b10000000
+    if (!fin) {
+           return { error: true, reason: `Multi-frame messages not implemented.`}
+    }
+
+    const ov = bytes[0] & 0b00001111
+    if (!Object.values(wsOps).includes(ov as WSOpcode[keyof WSOpcode])) {
+           return { error: true, reason: `Unsupported opcode ${ov}`}
+    }
+    const opcode = Object.entries(wsOps).find(([_, ovi]) => ovi == ov)[0]
+    
+    if (opcode == 'clos') {
+            return { opcode: 'clos', error: false }
+    }
+    
+    if (opcode == 'dbin' || opcode == 'cont') {
+        // Will add logic to handle these if it ever seems necessary
+        console.warn("Browser sent bytes with dbin/cont opcode.")
+        console.warn(bytes)
+    }
+    
+    let payloadLength = bytes[1] & 0b01111111
+    if (payloadLength > 125) {
+       return {error: true, reason: `Message is too large: ${bytes}`}
+    }
+    
+    let mask = new DataView(bytes.buffer, 2, 4)
+    let encoded = new DataView(bytes.buffer, 6, payloadLength)
+
+    let decoded = opcode === 'dtxt' ? '' : [];
+    let dec = new TextDecoder('utf-8')
+    let take = opcode === 'dtxt'
+        ? (e, m, i) => decoded += dec.decode(Uint8Array.from([encoded.getUint8(i) ^ mask.getUint8(i%4)]))
+        // @ts-ignore
+        : (e, m, i) => decoded.push(...Uint8Array.from([encoded.getUint8(i) ^ mask.getUint8(i%4)])) 
+
+
+    for (let i = 0; i < encoded.byteLength; i++) {
+        take(encoded, mask, i)
+    }
+
+    return { opcode: opcode as keyof WSOpcode, data: decoded, error: false }
+}
+
+
+
+function WSChangeset() {
+    let sid = 0
+
+    const buildListeners: {
+        sk: Socket,
+        cb: (_: Event) => void,
+        timerId: NodeJS.Timeout,
+        lastPingValue: number,
+        lastPongTime: number
+    }[] = []
+
+    return {
+        listeners: buildListeners,
+        startPings: _startPings,
+        keepalive: _keepalive,
+        addSocket: _addSocket
+    }
+    
+    function _startPings(id: number, interval=8000, deadline=3000) {
+        if (!buildListeners[id]) { 
+            console.error(`No socket ${id} for which to start pings.`)
+            return 
+        }
+        console.log('id: ', id)
+        console.log('interval: ', interval)
+        console.log('deadline: ', deadline)
+        
+        let {sk, lastPongTime, timerId} = buildListeners[id]
+
+        console.log('lastPongTime: ', lastPongTime)
+        console.log('lastPingValue: ', buildListeners[id].lastPingValue)
+        if ((Date.now() - lastPongTime) > (interval + deadline)) {
+            console.info(`Socket ${id} timed out: ${Date.now() - lastPongTime} is greater than ${interval + deadline}.`)
+            clearTimeout(timerId)
+            sk.destroy()
+            return
+        } else {
+            let nextPing = pingFrame(id)
+            buildListeners[id].lastPingValue = nextPing[2]
+            sk.write(nextPing)
+            buildListeners[id].timerId = setTimeout(_startPings, interval, id, interval, deadline)
+        }
+    }
+    
+    function _keepalive(id, pongData: number[]) {
+        if (!buildListeners[id]) { 
+            console.error(`No socket ${id} to keep alive.`)
+            return 
+        }
+
+        if (!(buildListeners[id].lastPingValue)
+            || (pongData[0] === buildListeners[id].lastPingValue)) {
+            console.log(`Setting pong time...`)
+            buildListeners[id].lastPongTime = Date.now()
+        }
+    }
+
+    function _addSocket(socket: Socket & {id?: number}) {
+        for (let i = 0; i < buildListeners.length; i++) {
+            const { sk, cb, lastPongTime: lastSeen } = buildListeners[i]
+            if (sk.destroyed || (Date.now() - lastSeen)) {
+                changeReceiver.removeEventListener("message", cb)
             }
         }
+
+        if (!socket.id) { socket.id = sid++ }
+        if (!buildListeners[socket.id]) {
+            buildListeners[socket.id] = {
+                lastPongTime: Date.now(),
+                sk: socket,
+                cb: (ev) => {
+                    let [mode, pName] = ev.data.split(" ")
+                    if (mode == "built") {
+                        const pukerDatas = relpathsToPukers[pName]
+                        performance.now()
+                        for (let p of pukerDatas) {
+                            console.log(p.id)
+                            console.log(p.ownLink.relpath)
+                            let wp = p.ownLink.webpath
+
+                            process.stderr.write(`${new Date()} | Writing '${wp}' to socket ${socket.id}...\n`)
+                            socket.write(prepareFrame(wp))
+                        }
+                    }
+                }
+            }
+
+            changeReceiver.addEventListener("message", buildListeners[socket.id].cb)
+
+        }
+    }
+
+}
+
+
+const changeset = WSChangeset()
+
+const websocket = createServer({ 
+    keepAlive: true, 
+    keepAliveInitialDelay: 1000, 
+}, async (socket: Socket & {id?: number}) => {
+    let accept;
+
+    changeset.addSocket(socket)
+    
+    socket.addListener("error", (e) => {
+        changeReceiver.removeAllListeners("message")
+        console.log('------------')
+        console.error(e.message)
+        console.error(e.cause)
+        console.log('------------')
     })
 
     socket.addListener("close", () => {
         console.info(`Server closing. Writing 'SERVER_CLOSE' to port ${socket}...\n`)
+        changeReceiver.removeAllListeners("message")
         socket.write(prepareFrame("SERVER_CLOSE"))
     })
 
     socket.addListener("data", async (data) => {
-        const lines = data.toString().split('\r\n')
-        const hval = headerExtract(lines)
-
-        if (lines?.[0].endsWith('HTTP/1.1')) {
-            if (!hval(/^Upgrade: /) == 'websocket') {
-                socket.write(Enc.encode([
-                    'HTTP/1.1 426 Upgrade Required',
-                    'Upgrade: websocket',
-                    'Connection: Upgrade',
-                    '',
-                    ''
-                ].join('\r\n')))
+        if (accept !== undefined) {
+            let res = decodeFrames(data)
+            if (res.error == true) {
+                socket.end()
+                socket.destroy(new Error(res.reason))
                 return
             }
-
-            const swk = hval(/^Sec-WebSocket-Key: /)
-            const magic = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
-            const inKey = swk + magic
-            const accept = await crypto.subtle.digest('sha-1', Enc.encode(inKey))
-            const b64accept = btoa(String.fromCharCode(...new Uint8Array(accept)))
-
-            const rb = Enc.encode([
-                'HTTP/1.1 101 Switching Protocols',
-                'Upgrade: websocket',
-                'Connection: Upgrade',
-                `Sec-WebSocket-Accept: ${b64accept}`,
-                '',
-                ''
-            ].join('\r\n'))
-
-            socket.write(rb)
-            return
+            if (res.opcode === 'clos') {
+                socket.end()
+            } else if (res.opcode === 'ping') {
+                console.info(`Received ping from ${socket.id}. Responding with pong...`)
+                socket.write(pongFrame(res.data as number[]))
+            } else if (res.opcode === 'pong') {
+                changeset.keepalive(socket.id, res.data as number[])
+            } else if (res.opcode === 'dtxt') {
+                console.warn(`${socket.id} | Got some text.`)
+                console.warn(res.data)
+            } else {
+                console.warn(`${socket.id} | Got a bag of data.`)
+                console.warn(res.data)
+            }
         }
+        else {
+            const lines = data.toString().split('\r\n')
+            const hval = headerExtract(lines)
+                if (lines?.[0].endsWith('HTTP/1.1')) {
+                    if (!(hval(/^Upgrade: /) === 'websocket')) {
+                        socket.write(Enc.encode([
+                            'HTTP/1.1 426 Upgrade Required',
+                            'Upgrade: websocket',
+                            'Connection: Upgrade',
+                            '',
+                            ''
+                        ].join('\r\n')))
+                        return
+                    }
+
+                    const swk = hval(/^Sec-WebSocket-Key: /)
+                    const magic = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+                    const inKey = swk + magic
+                    accept = await crypto.subtle.digest('sha-1', Enc.encode(inKey))
+                    const b64accept = btoa(String.fromCharCode(...new Uint8Array(accept)))
+
+                    const rb = Enc.encode([
+                        'HTTP/1.1 101 Switching Protocols',
+                        'Upgrade: websocket',
+                        'Connection: Upgrade',
+                        `Sec-WebSocket-Accept: ${b64accept}`,
+                        '',
+                        ''
+                    ].join('\r\n'))
+
+                    socket.write(rb)
+                    socket.write(prepareFrame(`hi ${socket.id}`))
+                    changeset.startPings(socket.id)
+                    return
+                }
+            }
     })
 })
 

@@ -62,10 +62,10 @@ export const PP = (function() {
         return Array(typeof s == "number" ? s : s.length).fill(what ?? ' ').join('')
     }
 
-    const padded = (s, w, what) => {
+    const padded = (s, w, what, left=false) => {
         s = s.toString()
         const delta = w - s.length > 0 ? w - s.length : 0
-        return s + spaces(delta, what)
+        return left ? spaces(delta, what) + s : s + spaces(delta, what)
     }
 
     const oneChar = (c, w=1) => {

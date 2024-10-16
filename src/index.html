@@ -4,31 +4,10 @@
     <title>No title</title>
   </head>
   <body>
-    <slot-pocket-slurp from="../bar.html" as="bio-graphy">
-    <style>
-      body {
-        background-color: #333;
-        color: #eef;
-        font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
-        font-weight: 200;
-      }
-      
-      section {
-        outline: 1px solid #aaa;
-        border-radius: 3px;
-        display: flex;
-        flex-direction: column;
-        align-items: center; 
-      }
-
-      p {
-        width: 500px;
-      }
-    </style>
+    <!slurp from="../bar.html" as="foo-bar">
     <section>
       <p id="perry">Regular top-level DOM content</p>
-      No addendum in sight, though. Hm? (And then it disappars on rebuid)?
-      <bio-graphy>And this is an addendum</bio-graphy>
+      <foo-bar>And this is an addendum</foo-bar>
     </section>
   </body>
 </html>

@@ -12,6 +12,32 @@ If there is no `#fragment` in the URL, the `<body>` tag of the target will becom
 All appearances of the `as` parameter (for example, `<name-here></name-here>`) will then
 be replaced with the inner content of the fragment referenced by `from`.
 
+Suppose you have the following content in a file called `bar.html`:
+
+```html
+file: bar.html
+~~~~~~~~~~~~~~
+<h1>My favorite sentence</h1>
+<slot name="greeting">Hello there, y'all</slot>
+```
+
+PSP will parse other HTML files that `<!slurp` bar under a name, and interpolate slot contents
+`bar.html`'s content:
+
+[demonstration of slotting label behavior](docs/bonjour.png)
+
+For this file, the server will output, in order:
+
+1) All content up to the inner `<body>` of the host file:
+```html
+<!doctype html>
+<html lang="en">
+  <head>
+    <title>No title</title>
+  </head>
+  <body>
+```
+
 # Installation
 PSP has no JavaScript dependencies for running other than a TypeScript interpreter for node versions <23.
 

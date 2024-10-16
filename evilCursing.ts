@@ -34,12 +34,20 @@ export interface CursedLens {
         shine: (startOffset?: number) => Generator<CLOCPointer>
         selectOnce: (lensOpts: LensOptions) => string,
         replaceBySigil: (replacingSigilName: string, content: string, addSigils: string[]) => string[],
-        lensedCapture: (pattern: RegExp, o: number) => { 
+        lensedCapture: (pattern: RegExp, o?: number) => { 
             index: number, 
             startTruth: number, 
             endTruth: number, 
-            groups: RegExpExecArray
+            endSourceLine: number, 
+            groups: string[]
         },
+        lensedCaptureAll: (pattern: RegExp, o?: number) => { 
+            index: number, 
+            startTruth: number, 
+            endTruth: number, 
+            endSourceLine: number, 
+            groups: string[]
+        }[],
         lensedDestroy: (offset, count) => CursedRangedOpRes
         lensedIntrude: (offset: number, content: string, sigils: string[]) => number
         lensedLiftRanges(...cutPointOffsets: [number, number][]): CursedDataGazer[]
@@ -377,18 +385,35 @@ export class CursedDataGazer {
             return this.#tome.replaceBySigil(replacingSigilName, content, addSigils)
         }
 
+        #lcImpl(m: RegExpMatchArray) {
+            let { truth: startTruth } = this.point(m.index)
+            let { truth: endTruth } = this.point(m.index + m[0].length)
+            let { linenoTruth: endSourceLine } = this.point(m.index + m[0].length - 1)
+            let groups = [...m]
+
+            return { index: m.index, startTruth, endTruth, endSourceLine, groups }
+        }
+
         lensedCapture(pattern, o = 0) {
             let v = [...this.shine(o)].map(x => x.voice).join('');
 
             let m = v.match(pattern)
             if (m === null) { return null }
-            else {
-                let { truth: startTruth } = this.point(m.index)
-                let { truth: endTruth } = this.point(m.index + m[0].length)
-                let groups = [...m]
+            else { return this.#lcImpl(m) }
+        }
 
-                return { index: m.index, startTruth, endTruth, groups }
+        lensedCaptureAll(pattern, o = 0) {
+            let v = [...this.shine(o)].map(x => x.voice).join('');
+
+            let lcResults = []
+            let matches = v.matchAll(pattern)
+            if (matches === null) { return null }
+            else {
+                for (let m of matches) {
+                    lcResults.push(this.#lcImpl(m))
+                }
             }
+            return lcResults
         }
 
         lensedDestroy(offset, count) {
@@ -946,7 +971,7 @@ export const ShatOps = {
     },
 
     takeLines(mem: ShatteredMemory, atLine, contextBefore = 0, contextAfter = 0) {
-        let lines = { at: '', before: [], after: [] }
+        let lines: {at: string, before: string[], after: string[]} = { at: '', before: [], after: [] }
         let line = 1
         for (let o = 0; o < mem.length; o++) {
             const c = mem.getVoiceAt(o)
@@ -955,7 +980,7 @@ export const ShatOps = {
             }
 
             if ((line >= atLine - contextBefore) && (line < atLine)) {
-                lines.before += c
+                lines.before.push(c)
             }
 
             if (line === atLine && c !== '\n') {
@@ -963,12 +988,13 @@ export const ShatOps = {
             }
 
             if ((line > atLine) && line <= (atLine + contextAfter)) {
-                lines.after += c
+                lines.after.push(c)
             }
         }
+        
+        lines.before = lines.before.join('').split('\n')
+        lines.after = lines.after.join('').split('\n')
 
-        lines.before = lines.before.split('\n')
-        lines.after = lines.after.split('\n')
         return lines
     },
 

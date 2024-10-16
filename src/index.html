@@ -7,13 +7,26 @@
   <body>
     <style>
       body {
+          display: grid;
+          grid-template-columns: 1;
+          justify-content: center;
           background-color: #333;
           color: #def;
       }
+      
+      .example-wrap {
+        outline: 1px solid white;
+        width: 500px;
+        border-radius: 2px;
+        padding: .2em 2em  1em 2em;
+      }
     </style>
-    <section>
+    <h1>Welcome to Pukable Slot Pockets</h1>
+    <section class="example-wrap">
        <p>Regular top-level DOM content! Cool.</p>
-       <foo-bar>And this is an addendum</foo-bar>
+       <foo-bar>
+         <span slot="greeting">Bonjour, le monde</span>
+       </foo-bar>
     </section>
   </body>
 </html>

@@ -54,7 +54,7 @@ export function ModalCharGaze(con: string, enterSeq: string | RegExp, exitSeq: s
         const lookbehind = con.slice(Math.max(0, i - nLookbehind), i)
         const entered = enteredBy(lookahead)
         const exited = exitedBy(lookbehind)
-        depth += entered ? 1 : exited ? -1 : 0
+        depth += entered ? 1 : (exited) ? -1 : 0
 
         if (depth > 0 && i === (con.length - 1)) {
             ranges.push({ start: rangeOpen, innerStart: innerRangeOpen })

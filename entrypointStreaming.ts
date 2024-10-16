@@ -37,18 +37,6 @@ export class PukableEntrypoint {
     #bodyBarfer: PukableSlotPocket
     #bodyPartLensMap: HconLensMap
 
-    #link
-    #preambleBarfer
-    #emitNext = false
-    #slotStack = []
-    #slotterStack = []
-    #backbuf = []
-    #frontbuf = []
-    #skips = []
-    #deps = []
-    #slurpFromPattern = /^<slurp-tags [^<>]*from=['"]([^'"]+)['"][^<>]*>/
-
-
     constructor(rootLoc: PLinkLocable, relpath: string, hostTagName = "psp", reloaderScript = '') {
         if (!relpath) {
             throw new TypeError('Missing relpath.')
@@ -57,7 +45,7 @@ export class PukableEntrypoint {
         let ownLink = indeedHtml(rootLoc(relpath)('.'))
 
         this.id = Symbol(PP.shortcode(`@${ownLink.relpath}${ownLink.fragment || ''}|`))
-        process.stderr.write(PP.styles.yellow + `\n--= ENTRYPOINT ${this.id.description} ==-` + PP.styles.none)
+        process.stderr.write(PP.styles.yellow + `\n<| Building entrypoint: ${this.id.description}...` + PP.styles.none)
 
         if (ownLink.result.type !== 'okHtml') {
             throw new ReferenceError(`${ownLink.relpath} did not resolve to an HTML file.`)
@@ -78,6 +66,7 @@ export class PukableEntrypoint {
         this.hostClose = `</${hostTagName}-host>\n`
 
         process.stderr.write('\n')
+
     }
 
     getAssociatedFilenames() {
@@ -94,9 +83,17 @@ export class PukableEntrypoint {
         yield this.bodyPreamble
         yield* this.#bodyBarfer.blowChunks()
         yield this.templateClose
-        yield this.#bodyBarfer.slotEnjoyers.join('\n')
+        yield this.#bodyBarfer.slotSlippers.join('\n')
         yield this.hostClose
         yield postBody
+    }
+    
+    *debugRepr() {
+        yield PP.styles.some('blue') + '/ (' +  this.id.description + ')' + PP.styles.none + '\n'
+        for (let line of this.#bodyBarfer.debugRepr(0)) {
+            yield* PP.styles.blue + '\n| ' + PP.styles.none + line
+        }
+        yield '\n' + PP.styles.blue + '\\' + Array(20).fill('_').join('') + PP.styles.none + '\n'
     }
 }
 

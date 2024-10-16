@@ -119,25 +119,44 @@ export const PP = (function() {
 }())
 
 export function pprintProblem(title, lineno, msg, asError, citationText={at: '', before: [], after: []}) {
+    const MAXLEN = 60
+
     process.stderr.write('\n')
     let log = asError ? (s) => { console.error(s) } : (s) => console.warn(s)
+    const cite = structuredClone(citationText)
+    
+    if (cite.at.length > MAXLEN) {
+        cite.at = cite.at.slice(0, MAXLEN-3) + '...'
+    }
+    
+    for (let i = 0; i <  cite.before.length; i++) {
+        if (cite.before[i].length > MAXLEN) {
+            cite.before[i] = cite.before[i].slice(0, MAXLEN-3) + '...'
+        }
+    }
+
+    for (let i = 0; i <  cite.after.length; i++) {
+        if (cite.after[i].length > MAXLEN) {
+            cite.after[i] = cite.before[i].slice(0, MAXLEN-3) + '...'
+        }
+    }
     
     const header = `|${title}:${lineno}|`
     log('/' + Array(header.length-1).fill('-').join(''))
     log(`|${title}:${lineno}|`)
 
-    if (citationText.at.length > 0) {
+    if (cite.at.length > 0) {
         log('|' + Array(header.length-1).fill('-').join(''))
-        citationText.before.forEach(l => log('|' + l))
-        log('|' + citationText.at)
+        cite.before.forEach(l => log('|' + l))
+        log('|' + cite.at)
         const underscore = asError ? '^' : '~'
-        const wsStripped = [...citationText.at.match(/(\s+)([^\s].*[^\s])/)]
+        const wsStripped = [...cite.at.match(/(\s+)([^\s].*[^\s])/)]
         if (wsStripped) {
             log('|' +wsStripped[1] + Array(wsStripped[2].length).fill(underscore).join(''))
         } else {
-            log('|' +Array(citationText.at.length).fill(underscore).join(''))
+            log('|' +Array(cite.at.length).fill(underscore).join(''))
         }
-        citationText.after.forEach(l => log('|' + l))
+        cite.after.forEach(l => log('|' + l))
         log('|' + Array(Math.min(msg.length, 60)).fill('-').join(''))
     }
 

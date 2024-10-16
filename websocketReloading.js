@@ -15,7 +15,7 @@ const _tryConnect = () => {
                     window._updateSource.socketId = how
                     console.log(`Took ID ${window._updateSource.socketId}.`)
                 }
-                else if (what === 'built' && how === new URL(window.location).pathname) {
+                else if (what === 'changed' && how === new URL(window.location).pathname) {
                     console.log("Page changed. Refreshing...")
                         window.location.reload()
                 } else {

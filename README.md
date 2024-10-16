@@ -26,7 +26,7 @@ PSP will parse other HTML files that `<!slurp` bar under a name, and interpolate
 
 ![demonstration of slotting label behavior](docs/bonjour.png)
 
-For this file, the server will output, in order:
+For this file, the server will stream to the client, in order:
 
 1) All content up to the inner `<body>` of the host file:
 ```html
@@ -37,6 +37,27 @@ For this file, the server will output, in order:
   </head>
   <body>
 ```
+
+2) A `<psp-host>` opening tag, and a `<template shadowrootmode="open"`> declaration;
+3) The `<!slurp>` declaration is skipped, and not included in the output;
+4) Everything up to, but not including, the `<foo-bar>`instance opening tag:
+```html
+    <section>
+      <p id="perry">Regular top-level DOM content</p>
+```
+5) The contents of `bar.html`:
+```html
+<h1>My favorite sentence</h1>
+<slot name="greeting">Hello there yall</slot>
+```
+6) The `</foo-bar>` instance closing tag, is skipped, and not included in the output;
+7) The `<template>` tag opened in step 2 is closed, any tags utilizing slots are streamed, and the `<psp-host>` tag is closed:
+```html
+    </template>
+    <span slot="greeting">Bonjour, le monde!</span>
+</psp-host>
+`````
+8) The rest of the file.
 
 # Installation
 PSP has no JavaScript dependencies for running other than a TypeScript interpreter for node versions <23.

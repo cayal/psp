@@ -1,5 +1,5 @@
-import { PP } from "./ppstuff"
-import { ModalCharGaze } from "./charGazing.js"
+import { PP } from "../../ppstuff"
+import { ModalCharGaze } from "../textEditing/charGazer"
 import { assert } from "console"
 import { format } from "util"
 
@@ -29,7 +29,7 @@ export interface CursedLens {
         image: string,
         lensOpts: string,
         invalidatePointers: () => void,
-        refocus: (newOpts: LensOptions) => void,
+        refocus: (newOpts: Partial<LensOptions>) => void,
         point: (offset: number) => CLOCPointer,
         shine: (startOffset?: number) => Generator<CLOCPointer>
         selectOnce: (lensOpts: LensOptions) => string,
@@ -54,7 +54,9 @@ export interface CursedLens {
         dichotomousJudgement: (entryPattern: string|RegExp,
             exitPattern: string|RegExp,
             sigil?: string,
-            encompass?: boolean
+            encompass?: boolean,
+            lookaheadN?: number,
+            lookbehindN?: number
         ) => CursedRangedOpRes[]
         stashCreed: (sigil: string) => void
         popCreed: () => void
@@ -76,7 +78,7 @@ export class CursedDataGazer {
 
     #memory: ShatteredMemory
 
-    #lenses = {}
+    #lenses: {[lensName: string]: CursedLens} = {}
 
     constructor(memory: ShatteredMemory) {
         this.#memory = memory
@@ -85,7 +87,7 @@ export class CursedDataGazer {
 
     get totalLength() { return this.#memory.length }
 
-    getLens(name) {
+    getLens(name: string): CursedLens {
         return this.#lenses[name]
     }
 
@@ -251,7 +253,7 @@ export class CursedDataGazer {
 
     brandAt(sigil, offset, unbrand = false) {
         if (!sigil) { throw new TypeError('sigil required') }
-        if (!offset) { throw new TypeError('offset required') }
+        if (typeof offset !== 'number') { throw new TypeError(`offset required (got: ${offset})`) }
 
         let b
         if (unbrand) {
@@ -346,7 +348,9 @@ export class CursedDataGazer {
                 ...(newOpts.includeConfabulated ? { includeConfabulated: newOpts.includeConfabulated } : {}),
                 creed: { ...this.#lensOpts.creed, ...newOpts.creed }
             }
+
             this.invalidatePointers()
+
             return this
         }
 
@@ -459,9 +463,11 @@ export class CursedDataGazer {
         dichotomousJudgement(entryPattern,
             exitPattern,
             sigil,
-            encompass = true
+            encompass = true,
+            lookaheadN?: number,
+            lookbehindN?: number
         ) {
-            const ranges = ModalCharGaze(this.image, entryPattern, exitPattern)
+            const ranges = ModalCharGaze(this.image, entryPattern, exitPattern, lookaheadN, lookbehindN)
 
             let retVal = [];
             for (let r of ranges.reverse()) {

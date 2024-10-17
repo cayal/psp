@@ -1,4 +1,5 @@
 <!doctype html>
+<!slurp from="./smoke.html" as="smoke-test">
 <!slurp from="./bar.html" as="foo-bar">
 <html lang="en">
   <head>
@@ -8,22 +9,31 @@
     <style>
       body {
           display: grid;
+          font-family: system-ui, sans-serif;
           grid-template-columns: 1;
+          grid-template-rows: 1;
+          height: 100vh;
+          align-items: center;
+          margin: 0;
           justify-content: center;
           background-color: #333;
           color: #def;
       }
       
       .example-wrap {
-        outline: 1px solid white;
+        outline: 1px solid #ccc;
         width: 500px;
         border-radius: 2px;
         padding: .2em 2em  1em 2em;
       }
     </style>
-    <h1>Welcome to Pukable Slot Pockets</h1>
+    <smoke-test>
+      If you see this message, it doesn't work.
+      <h1 slot="heading">It works!</h1>
+    </smoke-test>
     <section class="example-wrap">
-       <p>Regular top-level DOM content! Cool.</p>
+       <h2>Welcome to Pukable Slot Pockets</h2>
+       <p>PSP is an experiment in open shadow roots.</p>
        <foo-bar>
          <span slot="greeting">Bonjour, le monde</span>
        </foo-bar>

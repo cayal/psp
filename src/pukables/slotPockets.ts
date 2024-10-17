@@ -1,14 +1,16 @@
 import { link, readFileSync } from "fs"
 import { dirname } from "path"
-import { FSPeep } from "./filePeeping"
-import { PP, pprintProblem } from "./ppstuff.js"
-import { PLink, LinkPeeps, LinkPeepLocator, PeepedLinkResolution, QF, LinkLocator, indeedHtml, PLinkLocable, Queried } from "./linkPeeping"
-import { CursedDataGazer, CursedLens } from "./evilCursing"
+import { FSPeep } from "../paths/filePeeping"
+import { PP, pprintProblem } from "../../ppstuff.js"
+import { PLink, LinkPeeps, LinkPeepLocator, PeepedLinkResolution, QF, LinkLocator, indeedHtml, PLinkLocable, Queried } from "../paths/linkPeeping"
+import { CursedDataGazer, CursedLens } from "../textEditing/evilCurses"
 
 export class PukableSlotPocket {
 
     rootLoc
     reprName
+    slurpSigil: string
+    wholeFileSlurpDecls: {startTruth: number, endTruth: number}[] = []
     #gazer: CursedDataGazer
     #juiceSigilName: string
     #juiceLens: CursedLens
@@ -29,7 +31,7 @@ export class PukableSlotPocket {
 
     static slurpDeclFromPattern = /^<!slurp [^<>]*from=['"]([^'"]+)['"][^<>]*>/
     static slurpDeclAsPattern = /^<!slurp [^<>]*as=['"]([^'"]+)['"][^<>]*>/
-    static slotEnjoyerPattern = /<([a-z\-]+)\s[^<>]*slot="?([^<>"]+)"?[^<>]*>.*<\/\1>/g
+    static slotEnjoyerPattern = /<([a-zA-Z0-9\-]+)\s[^<>]*slot="?([^<>"]+)"?[^<>]*>.*<\/\1>/g
     static getNamedTagPatterns = (name) => ({
         presence: new RegExp(`<${name}(?:\\s*>|\\s[^<>]*>).*</${name}\\s*>`, 's'),
         entry: new RegExp(`^<${name}(?:\\s*>|\\s[^<>]*>)`),
@@ -97,7 +99,7 @@ export class PukableSlotPocket {
         const initEnd = performance.now()
         process.stderr.write(`${arrow} Done (${(initEnd - initStart).toFixed(2)} ms).\n`)
         for (let line of this.debugRepr()) {
-            process.stderr.write(line)
+            process.stderr.write('\n' + line)
         }
     }
 
@@ -113,12 +115,13 @@ export class PukableSlotPocket {
 
     slurpSubPockets() {
         const slurpDeclPattern = /<!slurp [^>]*>/g
-        const slurpSigil = PP.shortcode('slurpDecl')
+        this.slurpSigil = PP.shortcode('slurpDecl')
 
         const slurpDecls = this.#wholeFileLens.lensedCaptureAll(slurpDeclPattern)
 
         for (let { startTruth, endTruth, endSourceLine, groups } of slurpDecls) {
-            this.#gazer.brandRange(slurpSigil, startTruth, endTruth)
+            this.#gazer.brandRange(this.slurpSigil, startTruth, endTruth)
+            this.wholeFileSlurpDecls.push({startTruth, endTruth})
             let chars = groups[0]
 
             let match: RegExpMatchArray;
@@ -131,7 +134,7 @@ export class PukableSlotPocket {
                 let subLink = this.#ownLocator(match[1]);
                 if ("reason" in subLink) {
                     const vmsg = `File '${match[1]}' not found: ${subLink.reason}`
-                    pprintProblem(this.#ownLink.relpath, endSourceLine, vmsg, false, this.#gazer.takeLines(endSourceLine, 3, 3))
+                    pprintProblem(this.#ownLink.relpath, endSourceLine, vmsg, true, this.#gazer.takeLines(endSourceLine, 3, 3))
                     this.#validations.push([endSourceLine, 'File not found'])
                 }
 
@@ -143,6 +146,12 @@ export class PukableSlotPocket {
                     this.#validations.push([endSourceLine, vmsg])
                 } else {
                     let asName = match[1]
+
+                    if (asName.match(/[A-Z]/) || !asName.includes('-')) {
+                        const vmsg = `Lint: Custom tag names must be lowercase with 1+ hyphens: '${asName}'`
+                        pprintProblem(this.#ownLink.relpath, endSourceLine, vmsg, false)
+                        this.#validations.push([endSourceLine, vmsg])
+                    }
 
                     this.#ownSlurpMap[asName] = {
                         sourceLine: endSourceLine,
@@ -157,7 +166,8 @@ export class PukableSlotPocket {
     pocketOwnSlots() {
         const slotOpenPattern = /^<slot [^<>]*name=['"]([^'"]+)['"][^<>]*>/
         const slotClosePattern = /<\/slot[^<>]*>$/
-        const slots = this.#juiceLens.dichotomousJudgement(slotOpenPattern, slotClosePattern, 'slotPocket')
+        let slots;
+        slots = this.#juiceLens.dichotomousJudgement(slotOpenPattern, slotClosePattern, 'slotPocket', true, 256, 256)
         for (let { chars, endSourceLine } of slots) {
             let match
             if ((match = chars.match(slotOpenPattern)) && (match?.[1]?.length > 0)) {
@@ -181,11 +191,13 @@ export class PukableSlotPocket {
             let match;
             if (!(match = this.#juiceLens.image.match(presence))) {
                 const vmsg = `Lint: Unused slurp <${tagName}>`
+
                 pprintProblem(this.#ownLink.relpath, sourceLine, vmsg, false, this.#gazer.takeLines(sourceLine, 2, 2))
                 this.#validations.push([sourceLine, vmsg])
                 continue
             } else {
-                const usages = this.#juiceLens.dichotomousJudgement(entry, exit, tagName)
+                const usages = this.#juiceLens.dichotomousJudgement(entry, exit, tagName, true, 512, 512)
+
                 for (let { chars, endSourceLine } of usages) {
                     this.#juiceLens.replaceBySigil(tagName, pocket.blowChunks(), [this.#juiceSigilName])
                     const match = chars.matchAll(PukableSlotPocket.slotEnjoyerPattern) || []
@@ -195,6 +207,7 @@ export class PukableSlotPocket {
                         foundSlots.push(slotName)
                         this.#ownSlotSlippers.push({slotName, tagName, markup})
                     }
+
                     const needs = [...pocket.slots.values()]
                     if (needs.some(n => !foundSlots.includes(n))) {
                         const missing = needs.filter(n => !foundSlots.includes(n)).map(s => `"${s}"`).join(', ')
@@ -240,11 +253,22 @@ export class PukableSlotPocket {
     }
     
     *debugRepr(depth=0) {
-        yield PP.spaces(depth * 2) + '|--> ' + PP.styles.pink + this.reprName + PP.styles.none
+        let ind = PP.spaces(depth * 2)
+        let arrow = ''
+        yield ind + arrow + PP.styles.pink + this.reprName + PP.styles.none
 
+        for (let sl of this.#ownSlotSlippers) {
+            yield ind + `${PP.spaces(arrow.length)}|- # (${sl.slotName}) => <${sl.tagName}>`
+        }
 
         for (let [name, val] of Object.entries(this.#ownSlurpMap)) {
-            yield* val.pocket.debugRepr()
+            yield ind + PP.styles.pink + PP.spaces(arrow.length) + '|-- ' + `<${name}> (<!slurp @ line ${val.sourceLine}>)` + PP.styles.none
+            yield* val.pocket.debugRepr(depth+2)
+        }
+
+
+        for (let sn of this.#ownSlotNames) {
+            yield ind + `${PP.spaces(arrow.length)} |- * [ ${sn} ]`
         }
 
         for (let [ln, msg] of this.#validations) {
@@ -252,9 +276,7 @@ export class PukableSlotPocket {
             yield PP.spaces(2 + (depth * 2)) + '|--' + exclamation + `->  ${PP.styles.yellow}${msg} @ line ${ln}\n`
         }
 
-        for (let x of this.slots) {
-            yield x
-        }
+
     }
 }
 

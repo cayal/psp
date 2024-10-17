@@ -1,7 +1,7 @@
 import { existsSync, link, readFileSync, statSync } from "fs";
-import { CursedDataGazer as CursedDataGazer, ShatteredMemory } from "./evilCursing";
-import { FSPeep } from "./filePeeping.js";
-import { PP } from "./ppstuff.js";
+import { CursedDataGazer as CursedDataGazer, ShatteredMemory } from "../textEditing/evilCurses";
+import { FSPeep } from "./filePeeping";
+import { PP } from "../../ppstuff.js";
 import { join, relative, resolve } from "path";
 import { ModalCharGaze } from "./charGazing.js";
 import { isAscii, isUtf8 } from "buffer";
@@ -133,7 +133,7 @@ function PLQ(from: Exclude<PLink, { type: 'dir' }>, respondingTo: QF): PLink & Q
         const gazer = new CursedDataGazer(ShatteredMemory({ content: (from.ogPeep.contents as string) }))
         const content = gazer.lens({ creed: { comment: 'shun' } }, 'default')
         content.dichotomousJudgement('<!--', '-->', 'comment')
-        const hasBody = content.image.match(/<body.*>.*<\/body.*>/gs) !== null
+        const hasBody = content.image.match(/<body.*>/gs) !== null
         const fragmentNames = [...content.image.matchAll(/id=['"]([^\t\n\f \/>"'=]+)['"]/gs)].map(m => m[1])
         if (fragment && !fragmentNames.includes(fragment)) {
             return { type: 'err', reason: `Fragment ${fragment} not found in ${gazer.id.description}.` }
@@ -235,7 +235,7 @@ export function HConLM(visions: CursedDataGazer, hasBody: boolean, fragmentNames
         const bodyOpenPattern = /^<body\s*[^<>]*>/
         const bodyClosePattern = /<\/body[^<>]*>$/
         const bodySigil = uniquing('body')
-        DL.dichotomousJudgement(bodyOpenPattern, bodyClosePattern, bodySigil)
+        DL.dichotomousJudgement(bodyOpenPattern, bodyClosePattern, bodySigil, true, 1024, 1024)
         visions.lens({ creed: { [`${bodySigil}.Inner`]: 'prosyletize' } }, bodySigil)
         retVal.body = bodySigil
 
@@ -259,7 +259,7 @@ export function HConLM(visions: CursedDataGazer, hasBody: boolean, fragmentNames
 
         const tfOpenPattern = new RegExp(`^<${tagName}[^<>]*>`)
         const tfClosePattern = new RegExp(`</${tagName}[^<>]*>$`)
-        const targetRanges = visions.getLens('default').dichotomousJudgement(tfOpenPattern, tfClosePattern, frn)
+        const targetRanges = visions.getLens('default').dichotomousJudgement(tfOpenPattern, tfClosePattern, frn, true, 1024, 1024)
         if (!targetRanges || !targetRanges.length) {
             DL.pprintProblemLine(null, `Tag with ID '${frn}' not found.`, true)
         } else if (targetRanges.length > 1) {

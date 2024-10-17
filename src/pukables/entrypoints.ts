@@ -1,8 +1,8 @@
-import { PukableSlotPocket as PukableSlotPocket } from './htmlSlotPocketing';
-import { FSPeep } from './filePeeping.js';
-import { HData, LinkPeeps, LinkPeepLocator, PLink, PeepedLinks, QF, LinkLocator, indeedHtml, PLinkLocable, Queried, HconLensMap } from './linkPeeping.js';
-import { PP, pprintProblem } from './ppstuff.js';
-import { CursedDataGazer } from './evilCursing';
+import { PukableSlotPocket as PukableSlotPocket } from './slotPockets';
+import { FSPeep } from '../paths/filePeeping';
+import { HData, LinkPeeps, LinkPeepLocator, PLink, PeepedLinks, QF, LinkLocator, indeedHtml, PLinkLocable, Queried, HconLensMap } from '../paths/linkPeeping.js';
+import { PP, pprintProblem } from '../../ppstuff.js';
+import { CursedDataGazer } from '../textEditing/evilCurses';
 
 let ti = `<!doctype html>
 <html>
@@ -64,7 +64,16 @@ export class PukableEntrypoint {
         this.bodyPreamble = `\n<${hostTagName}-host>\n    <template shadowrootmode="open">`
         this.templateClose = `\n    </template>\n`
         this.hostClose = `</${hostTagName}-host>\n`
+        
+        // #bodyBarfer's slurp sigil refers to the <!slurp declaration. 
+        // It should be shunned whether in the body, before, or after.
+        for (let {startTruth, endTruth} of this.#bodyBarfer.wholeFileSlurpDecls) {
+            this.#gazer.brandRange(this.#bodyBarfer.slurpSigil, startTruth, endTruth)
+        }
 
+        this.#gazer.getLens(this.#bodyPartLensMap.preBody).refocus({creed: {[this.#bodyBarfer.slurpSigil]: 'shun'}})
+        this.#gazer.getLens(this.#bodyPartLensMap.postBody).refocus({creed: {[this.#bodyBarfer.slurpSigil]: 'shun'}})
+        
         process.stderr.write('\n')
 
     }
@@ -83,14 +92,14 @@ export class PukableEntrypoint {
         yield this.bodyPreamble
         yield* this.#bodyBarfer.blowChunks()
         yield this.templateClose
-        yield this.#bodyBarfer.slotSlippers.join('\n')
+        yield this.#bodyBarfer.slotSlippers.map(({markup})=>markup + '\n').join('')
         yield this.hostClose
         yield postBody
     }
     
     *debugRepr() {
         yield PP.styles.some('blue') + '/ (' +  this.id.description + ')' + PP.styles.none + '\n'
-        for (let line of this.#bodyBarfer.debugRepr(0)) {
+        for (let line of this.#bodyBarfer.debugRepr(1)) {
             yield* PP.styles.blue + '\n| ' + PP.styles.none + line
         }
         yield '\n' + PP.styles.blue + '\\' + Array(20).fill('_').join('') + PP.styles.none + '\n'

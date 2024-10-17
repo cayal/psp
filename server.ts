@@ -4,20 +4,20 @@ import { Stats, existsSync, readFileSync, readdirSync, statSync, watch } from 'n
 import path, { dirname } from 'node:path';
 import { MessageChannel } from 'node:worker_threads'
 import assert from 'node:assert';
-import { PukableEntrypoint } from './entrypointStreaming';
-import { HData, LinkPeeps, LinkPeepLocator, PLink, QF, PLinkLocable } from './linkPeeping';
-import { PukableSlotPocket } from './htmlSlotPocketing';
-import { FSPeep, FSPeepRoot } from './filePeeping';
+import { PukableEntrypoint } from './src/pukables/entrypoints';
+import { HData, LinkPeeps, LinkPeepLocator, PLink, QF, PLinkLocable } from './src/paths/linkPeeping';
+import { PukableSlotPocket } from './src/pukables/slotPockets';
+import { FSPeep, FSPeepRoot } from './src/paths/filePeeping';
 import { PP } from './ppstuff.js';
 import { Socket } from 'node:net';
-import { decodeFrames, pongFrame, prepareFrame, WSChangeset } from './websocketFraming';
+import { decodeFrames, pongFrame, prepareFrame, WSChangeset } from './src/websockets/websocketFraming';
 
 process.stderr.write(`Hi (${process.pid})\n`)
 
 let cannotPuke = false
 
-const WEBROOT = 'src'
-const RELOADER_SCRIPT = '\n<script>\n' +  readFileSync('websocketReloading.js', 'utf-8') + '\n</script>\n'
+const WEBROOT = 'web'
+const RELOADER_SCRIPT = '\n<script>\n' +  readFileSync('./src/websockets/websocketReloading.js', 'utf-8') + '\n</script>\n'
 const { port1: changeReceiver, port2: changeTransmitter } = new MessageChannel()
 
 performance.mark('A')

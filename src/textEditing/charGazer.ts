@@ -1,22 +1,33 @@
-import { FSPeep } from "./filePeeping"
+import { FSPeep } from "../paths/filePeeping"
 
 type fEB = (_: string) => RegExpMatchArray | boolean | null
 type fEL = (_: string) => number
 type Range = { start: number, end?: number, innerStart?: number, innerEnd?: number }
 
-export function ModalCharGaze(con: string, enterSeq: string | RegExp, exitSeq: string | RegExp): Range[] {
+export function ModalCharGaze(con: string, 
+    enterSeq: string | RegExp, 
+    exitSeq: string | RegExp,
+    lookaheadN?: number,
+    lookbehindN?: number
+): Range[] {
     let enteredBy: fEB, exitedBy: fEB,
         enterLength: fEL, exitLength: fEL,
         nLookahead: number, nLookbehind: number
 
     if (enterSeq instanceof RegExp) {
         if (!enterSeq.source.startsWith('^')) {
-            console.warn(`ModalCharGazer.enrange() | Entry pattern '${enterSeq.source}' does not start with '^'.`)
+            console.warn(`ModalCharGaze() | Entry pattern '${enterSeq.source}' does not start with '^'.`)
+        }
+
+        if (!lookaheadN) {
+            console.warn(`ModalCharGaze() | lookaheadN is '${lookaheadN}' for pattern: \n` +
+                `enterSeq: ${enterSeq.source}\n` +
+                `Set a reasonable upper bound on match length if possible.\n\n' `)
         }
 
         enteredBy = (s) => s.match(enterSeq)
         enterLength = (s) => s.match(enterSeq)?.[0].length ?? 0
-        nLookahead = Infinity
+        nLookahead = lookaheadN ?? Infinity
     } else {
         enteredBy = (s) => s == enterSeq
         enterLength = (_) => enterSeq.length
@@ -25,12 +36,18 @@ export function ModalCharGaze(con: string, enterSeq: string | RegExp, exitSeq: s
 
     if (exitSeq instanceof RegExp) {
         if (!exitSeq.source.endsWith('$')) {
-            console.warn(`ModalCharGazer.enrange() | Exit pattern '${enterSeq.source}' does not end with '$'.`)
+            console.warn(`ModalCharGazer.enrange() | Exit pattern '${exitSeq.source}' does not end with '$'.`)
+        }
+
+        if (!lookbehindN) {
+            console.warn(`ModalCharGaze() | lookbehindN is '${lookbehindN}' for pattern: \n` +
+                `enterSeq: ${exitSeq.source}\n` +
+                `Set a reasonable upper bound on match length if possible.\n\n' `)
         }
 
         exitedBy = (s) => s.match(exitSeq)
         exitLength = (s) => s.match(exitSeq)?.[0].length ?? 0
-        nLookbehind = Infinity
+        nLookbehind = lookbehindN ?? Infinity
     } else {
         exitedBy = (s) => s == exitSeq
         exitLength = (_) => exitSeq.length
@@ -45,6 +62,12 @@ export function ModalCharGaze(con: string, enterSeq: string | RegExp, exitSeq: s
             : {})
     }
 
+    let DBG = false
+    // console.log(entryPattern?.source)
+    if (con?.includes('d6g')){
+        DBG = true
+    }
+
     const ranges: Range[] = []
     let rangeOpen = -1
     let innerRangeOpen = -1
@@ -56,7 +79,7 @@ export function ModalCharGaze(con: string, enterSeq: string | RegExp, exitSeq: s
         const exited = exitedBy(lookbehind)
         depth += entered ? 1 : (exited) ? -1 : 0
 
-        if (depth > 0 && i === (con.length - 1)) {
+        if (depth > 0 && i === (con.length)) {
             ranges.push({ start: rangeOpen, innerStart: innerRangeOpen })
             continue
         }

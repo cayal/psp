@@ -76,12 +76,33 @@ Any method of generating a local certfile will work.
 The cert should be named `localhost.pem`, and the key should be named `localhost-key.pem`.
 Both should be located or symlinked in the project directory adjacent to `server.ts`.
 
-On macOS, `mkcert` is a convenient program for cert generation:
+[mkcert](https://github.com/FiloSottile/mkcert) is a convenient program for cert generation:
+
+On macOS, install with brew:
 ```bash
 $ brew install mkcert
-$ mkcert install
-$ mkcert localhost
 ```
+
+On Windows, use Chocolatey:
+```
+choco install mkcert
+```
+
+or use Scoop
+
+```
+scoop bucket add extras
+scoop install mkcert
+```
+
+After installing, run:
+```
+mkcert install
+mkcert localhost
+```
+Ensure `localhost.pem`, and the key, `localhost-key.pem`, are in the `psp` folder.
+
+[See the mkcert repo for more documentation.](https://github.com/FiloSottile/mkcert)
 
 ## Testing
 After running `npm install`, use `npm run test` to test with Vitest.

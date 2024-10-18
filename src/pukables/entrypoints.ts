@@ -28,8 +28,9 @@ let ti = `<!doctype html>
 
 export class PukableEntrypoint {
     id: symbol
-    bodyPreamble: string
     reloaderScript: string
+    hostOpen: string
+    templateOpen: string
     templateClose: string
     hostClose: string
     ownLink: PLink & Queried & { type: 'html' }
@@ -38,7 +39,7 @@ export class PukableEntrypoint {
     #bodyBarfer: PukableSlotPocket
     #bodyPartLensMap: HconLensMap
 
-    static slurpDeclPattern = /^<!slurp\s[^<>]*>$/
+    static slurpDeclExitPattern = /<!slurp\s[^<>]*>$/
 
     constructor(rootLoc: PLinkLocable, relpath: string, hostTagName = "psp", reloaderScript = '') {
         if (!relpath) {
@@ -64,8 +65,9 @@ export class PukableEntrypoint {
         this.#bodyPartLensMap = markupData.lensNames
         this.#bodyBarfer = new PukableSlotPocket(rootLoc, relpath)
         this.reloaderScript = reloaderScript
-        this.bodyPreamble = `\n<${hostTagName}-host>\n    <template shadowrootmode="open">`
-        this.templateClose = `\n    </template>\n`
+        this.hostOpen = `\n<${hostTagName}-host>\n`
+        this.templateOpen = `\n<template shadowrootmode="open">\n`
+        this.templateClose = `\n</template>\n`
         this.hostClose = `</${hostTagName}-host>\n`
         
         // #bodyBarfer brands its '<!slurp>' declarations (even outside the juice)
@@ -75,7 +77,7 @@ export class PukableEntrypoint {
         this.#gazer.getLens(this.#bodyPartLensMap.preBody)
             .dichotomousJudgement({
                 entryPattern: '<!slurp',
-                exitPattern: PukableEntrypoint.slurpDeclPattern,
+                exitPattern: PukableEntrypoint.slurpDeclExitPattern,
                 sigil: this.#bodyBarfer.slurpMarker,
                 lookbehindN: 256
             })
@@ -86,7 +88,7 @@ export class PukableEntrypoint {
         this.#gazer.getLens(this.#bodyPartLensMap.postBody)
             .dichotomousJudgement({
                 entryPattern: '<!slurp',
-                exitPattern: PukableEntrypoint.slurpDeclPattern,
+                exitPattern: PukableEntrypoint.slurpDeclExitPattern,
                 sigil: this.#bodyBarfer.slurpMarker,
                 lookbehindN: 256
             })
@@ -101,15 +103,45 @@ export class PukableEntrypoint {
     getAssociatedFilenames() {
         return [this.ownLink.relpath, ...this.#bodyBarfer.deepGetAssocFilenames()]
     }
+    
+    regurgitatePrebody() {
+        let preBodyContent = this.#gazer.getLens(this.#bodyPartLensMap.preBody).image ?? ''
+        const { hostOuterStyles, hostInnerStyles } = this.#bodyBarfer.deepGetStyleContent()
+        let innerStyleTag = `
+            <style>
+            ${[...hostInnerStyles.values()].join('\n')}
+            </style>
+            ` 
+        let outerStyleTag = `
+            <style>
+            ${[...hostOuterStyles.values()].join('\n')}
+            </style>
+            ` 
+        if (preBodyContent.includes('</head>')) {
+            let i = preBodyContent.indexOf('</head>');
+
+            preBodyContent = [
+                preBodyContent.slice(0, i),
+                outerStyleTag,
+                ...preBodyContent.slice(i, 0)
+            ].join('')
+
+        } else {
+            preBodyContent += outerStyleTag
+        }
+
+        return { preBodyContent, innerStyleTag }
+    }
 
     *blowChunks() {
-        const preBody = this.#gazer.getLens(this.#bodyPartLensMap.preBody).image ?? ''
+        const { preBodyContent, innerStyleTag } = this.regurgitatePrebody()
         const postBody = this.#gazer.getLens(this.#bodyPartLensMap.postBody).image ?? ''
 
-        yield preBody
+        yield preBodyContent
         yield this.reloaderScript
-        yield* this.#bodyBarfer.deepGetStyleContent().join('\n')
-        yield this.bodyPreamble
+        yield this.hostOpen
+        yield this.templateOpen
+        yield innerStyleTag
         yield* this.#bodyBarfer.blowChunks()
         yield this.templateClose
         yield this.#bodyBarfer.deepGetPukableBubbles().map(x => x.digestedMarkup).join('\n')

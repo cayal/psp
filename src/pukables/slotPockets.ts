@@ -71,6 +71,11 @@ type RawBubble =
         rawMarkup: string,
         slotAttr: string,
     }
+    
+type StyleChunks = {
+    hostOuterStyles: Set<string>
+    hostInnerStyles: Set<string>
+}
 
 export class PukableSlotPocket {
 
@@ -100,7 +105,7 @@ export class PukableSlotPocket {
 
     #slurpedSubPockets: PukableSlurp[] = []
 
-    #styleContent = []
+    #styleContent: StyleChunks = { hostOuterStyles: new Set<string>(), hostInnerStyles: new Set<string>() }
 
     #validations: [number, string][] = []
 
@@ -184,7 +189,7 @@ export class PukableSlotPocket {
 
         this.suckRawBubbles()
 
-        this.gobbleRawStyles()
+        this.gulpAndDigestStyles()
 
         this.slurpSubPockets()
         
@@ -195,8 +200,30 @@ export class PukableSlotPocket {
         }
     }
     
-    deepGetStyleContent() {
-        return [this.#styleContent, ...this.#slurpedSubPockets.flatMap(x => x.pocket.deepGetStyleContent())]
+    /**
+     * Considerations with styles:
+     * 1) They'll be concatenated to a single <style> tag. Since they get added
+     *      to the set from the oustide in and top down, this equates to
+     *      flattening the puke tree depth-first. The same-specificity rule will
+     *      apply accordingly in the final document.
+     *
+     * 2) The return type of deepGetStyleContent is a set, so only one of each
+     *      unique style contents will be in the final document.
+     * 
+     * @param styleset 
+     * @returns 
+     */
+    deepGetStyleContent(styleset: StyleChunks = {hostInnerStyles: new Set(), hostOuterStyles: new Set()}): StyleChunks {
+        this.#styleContent.hostOuterStyles.forEach(sc => styleset.hostOuterStyles.add(sc))
+        this.#styleContent.hostInnerStyles.forEach(sc => styleset.hostInnerStyles.add(sc))
+
+        for (let { pocket } of this.#slurpedSubPockets) {
+            let { hostOuterStyles, hostInnerStyles } = pocket.deepGetStyleContent(styleset)
+            hostOuterStyles.forEach(sc => styleset.hostOuterStyles.add(sc))
+            hostInnerStyles.forEach(sc => styleset.hostInnerStyles.add(sc))
+        }
+
+        return styleset
     }
 
     get ownFilename() {
@@ -328,19 +355,41 @@ export class PukableSlotPocket {
 
     }
 
-    gobbleRawStyles() {
+    gulpAndDigestStyles() {
         this.styleBlockMarker = PP.shortcode('style')
+        const outerRulePattern = /^\s+((html|head|body)({|[ .[:+~|>#][^{]*){[^}]+})/gm
+        const univRulePattern = /^\s+(\*({|[ .[:+~|>#][^{]*){[^}]+})/gm
+
         const styleTags = this.#juiceLens.dichotomousJudgement({
             entryPattern: /^<style(>| [^<>]*>)/, 
             exitPattern: '</style>', 
             lookaheadN: REASONABLE_TAG_LENGTH,
             sigil: this.styleBlockMarker
-        }
-        )
-        for (let { chars } of styleTags) {
-            this.#styleContent.push(chars)
-        }
+        })
 
+        for (let { chars } of styleTags) {
+            let styleInnerContent = chars
+                .replace(/^<style(>| [^<>]*>)/, '')
+                .replace('</style>', '')
+
+            let styleInnerRules = styleInnerContent.split('')
+
+            let outerRules = styleInnerContent.matchAll(outerRulePattern)             
+            for( let oru of [...outerRules].reverse()) {
+                styleInnerRules.splice(oru.index, oru[0].length)
+                this.#styleContent.hostOuterStyles.add(oru[0])
+            }
+
+            styleInnerContent = styleInnerRules.join('')
+
+            // Universal rules will be duplicated inside and outside the host
+            let univRules = styleInnerContent.matchAll(univRulePattern)             
+            for( let uru of [...univRules].reverse()) {
+                this.#styleContent.hostOuterStyles.add(uru[0])
+            }
+
+            this.#styleContent.hostInnerStyles.add(styleInnerContent)
+        }
     }
 
     gobbleRawBurps() {
@@ -540,13 +589,6 @@ export class PukableSlotPocket {
                 yield burp.digestedCloseTag
             }
         }
-
-        // let pukables = [...this.#slurpedSubPockets.map(ssp => ssp.pocket)]
-
-        // for (let i = 0; i < chunks.length; i++) {
-        //     yield chunks[i].getLens(this.juiceLensName).image
-        //     yield 
-        // }
     }
 
     *debugRepr(depth=0, bubblesFromAbove: RawBubble[]=[], burpLetters={ring: this.#debugLetters}) {

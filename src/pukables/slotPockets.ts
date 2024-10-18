@@ -3,6 +3,7 @@ import { PP, pprintProblem } from "../fmt/ppstuff.js"
 import { PLink, LinkPeeps, LinkPeepLocator, PeepedLinkResolution, QF, LinkLocator, indeedHtml, PLinkLocable, Queried } from "../paths/linkPeeping"
 import { CursedDataGazer, CursedLens } from "../textEditing/evilCurses"
 import * as assert from "node:assert"
+import { L } from "../fmt/logging"
 
 const REASONABLE_TAG_LENGTH=256
 
@@ -129,7 +130,7 @@ export class PukableSlotPocket {
         this.#includedFromChain = includedFromChain
 
         const arrow = `\n|${PP.spaces(includedFromChain.length, '-')}>`
-        process.stderr.write(`${arrow} ${this.reprName}...`)
+        L.log(`${arrow} ${this.reprName}...`)
 
         for (let b of this.#includedFromChain) {
             if (b.id == this.reprName) {
@@ -188,9 +189,9 @@ export class PukableSlotPocket {
         this.slurpSubPockets()
         
         const initEnd = performance.now()
-        process.stderr.write(`${arrow} Done (${(initEnd - initStart).toFixed(2)} ms).\n`)
+        L.log(`${arrow} Done (${(initEnd - initStart).toFixed(2)} ms).\n`)
         for (let line of this.debugRepr()) {
-            process.stderr.write('\n' + line)
+            L.log('\n' + line)
         }
     }
     
@@ -471,17 +472,19 @@ export class PukableSlotPocket {
         let digestedCloseTag = rb.rawCloseTag.replace(`${rb.tagName}`, 'div')
 
         let digestedInnerResidue = rb.rawInnerMarkup.replaceAll(/<.*>[^<>]*<.*>/g, '')
-        if (digestedInnerResidue.replaceAll(/\s/g, '').length) {
-            const vmsg = `Burp contains some unslotted residue.`
+        
+        // Residual concatenation end up being useful, so disabling this warning.
+        // if (digestedInnerResidue.replaceAll(/\s/g, '').length) {
+        //     const vmsg = `Burp contains some unslotted residue.`
 
-            pprintProblem(this.#ownLink.relpath, 
-                rb.sourceLineno, 
-                vmsg, 
-                false, 
-                this.#bolus.takeLines(rb.sourceLineno, 0, 4)
-            )
-            this.#validations.push([rb.sourceLineno, vmsg])
-        }
+        //     pprintProblem(this.#ownLink.relpath, 
+        //         rb.sourceLineno, 
+        //         vmsg, 
+        //         false, 
+        //         this.#bolus.takeLines(rb.sourceLineno, 0, 4)
+        //     )
+        //     this.#validations.push([rb.sourceLineno, vmsg])
+        // }
         
         let chunkFlavorTransformation = this.#curriedRegurgitator(rb)
 

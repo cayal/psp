@@ -2,6 +2,7 @@ import { existsSync, readdirSync, readFileSync, Stats, statSync, watch, WatchLis
 import { resolve, parse, join, ParsedPath } from "path"
 import { PP } from "../fmt/ppstuff"
 import { MessagePort } from "worker_threads"
+import { L } from "../fmt/logging"
 
 export type FSPeep = FSPbv & (Dimp | Fimp)
 
@@ -201,9 +202,9 @@ function Dimp(basis: FSPbv, changeTransmitter?: MessagePort): FSPbv & Dimp {
         if (changeTransmitter) {
             watcher = watch(dimp.path.base, { persistent: false, recursive: false }, (x, filename) => {
                 let changePath = join(dimp.relpath, filename ?? '')
-                process.stderr.write(`${dimp.relpath}: ${changePath} changed on disk. \n`)
+                L.log(`${dimp.relpath}: ${changePath} changed on disk. \n`)
                 if (performance.now() - lastTransmit > 100) {
-                    process.stderr.write(`${dimp.relpath}: Posting 'change ${changePath}'. \n`)
+                    L.log(`${dimp.relpath}: Posting 'change ${changePath}'. \n`)
                     lastTransmit = performance.now()
                     changeTransmitter.postMessage(`change ${changePath}`)
                 }
@@ -270,7 +271,7 @@ function Fimp(basis: FSPbv): FSPbv & Fimp {
         if (!relpath || relpath == '.') { return { data: fimp } }
 
         if (!fimp.parent) {
-            process.stderr.write([...fimp.repr()].join(''))
+            L.log([...fimp.repr()].join(''))
             return {
                 reason: `Attempting to resolve ${relpath} from ${fimp.relpath}, `
                     + `but it was constructed as the top of its tree. `

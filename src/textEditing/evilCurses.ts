@@ -1,3 +1,4 @@
+import { L } from "../fmt/logging"
 import { PP } from "../fmt/ppstuff"
 import { ModalCharGaze } from "../textEditing/charGazer"
 import { assert } from "console"
@@ -183,7 +184,7 @@ export class CursedDataGazer {
         const indent = PP.spaces(depth)
         let sent = ''
         const send = (s) => {
-            process.stderr.write(s)
+            L.log(s)
             sent += s.replaceAll(new RegExp('\x1b\\[[0-9][0-9]?m', 'g'), '')
         }
         send(PP.styles.green)
@@ -603,7 +604,7 @@ export class CursedDataGazer {
             const indent = pp.spaces(depth)
             let sent = ''
             const send = (s) => {
-                process.stderr.write(s)
+                L.log(s)
                 sent += s.replaceAll(new RegExp('\x1b\\[[0-9][0-9]?m', 'g'), '')
             }
 

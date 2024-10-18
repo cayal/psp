@@ -6,6 +6,7 @@ import { join, relative, resolve } from "path";
 import { ModalCharGaze } from "./charGazing.js";
 import { isAscii, isUtf8 } from "buffer";
 import { assert } from "console";
+import { L } from "../fmt/logging";
 
 
 export type QF = {
@@ -107,10 +108,10 @@ function PLQ(from: Exclude<PLink, { type: 'dir' }>, respondingTo: QF): PLink & Q
         ...from,
         query,
         fragment,
-        result: responder()
+        result: responder(query, fragment)
     }
 
-    function _getBuffer() {
+    function _getBuffer(_query, _fragment) {
         const buf = Buffer.from(from.ogPeep.contents as string)
 
         // TODO mimetypes etc
@@ -129,7 +130,7 @@ function PLQ(from: Exclude<PLink, { type: 'dir' }>, respondingTo: QF): PLink & Q
         }
     }
 
-    function _getGazedMarkup() {
+    function _getGazedMarkup(_query, fragment) {
         const gazer = new CursedDataGazer(ShatteredMemory({ content: (from.ogPeep.contents as string) }))
         const content = gazer.lens({ creed: { comment: 'shun' } }, 'default')
         content.dichotomousJudgement({
@@ -138,11 +139,20 @@ function PLQ(from: Exclude<PLink, { type: 'dir' }>, respondingTo: QF): PLink & Q
             sigil: 'comment'
         })
         const hasBody = content.image.match(/<body.*>/gs) !== null
-        const fragmentNames = [...content.image.matchAll(/id=['"]([^\t\n\f \/>"'=]+)['"]/gs)].map(m => m[1])
-        if (fragment && !fragmentNames.includes(fragment)) {
-            return { type: 'err', reason: `Fragment ${fragment} not found in ${gazer.id.description}.` }
+        
+        let fragmentNames;
+        if (!fragment) {
+            fragmentNames = []
         }
-        const lensNames = HConLM(gazer, hasBody, fragmentNames)
+        else {
+            fragmentNames = [...content.image.matchAll(/id=['"]([^\t\n\f \/>"'=]+)['"]/gs)].map(m => m[1])
+
+            if (!fragmentNames.includes(fragment)) {
+                return { type: 'err', reason: `Fragment ${fragment} not found in ${gazer.id.description}.` }
+            }
+        }
+
+        let lensNames = HConLM(gazer, hasBody, fragmentNames)
 
         return {
             type: 'okHtml',
@@ -165,7 +175,6 @@ export const LinkPeepLocator: (_: LinkPeeps) => PLinkLocable = ({ rootAbs, links
 
     return function makeLocator(atA: string) {
         const dbgInfo = `LPResolveRelative{rootAbs: ${rootAbs}}.atA(${atA})`
-
 
         atA = normalize(atA).target
         const itSaMe = (l: PLink) => (l.relpath == atA)
@@ -236,12 +245,12 @@ export function HConLM(visions: CursedDataGazer, hasBody: boolean, fragmentNames
 
     const DL = visions.getLens('default')
     if ("body" in retVal) {
-        const bodyOpenPattern = /^<body\s*[^<>]*>/
-        const bodyClosePattern = /<\/body[^<>]*>$/
+        const bodyOpenPattern = /<body\s*[^<>]*>/
+        const bodyClosePattern = /<\/body\s*[^<>]*>/
         const bodySigil = uniquing('body')
         DL.dichotomousJudgement({
-            entryPattern: bodyOpenPattern, 
-            exitPattern: bodyClosePattern, 
+            entryPattern: new RegExp('^' + bodyOpenPattern.source), 
+            exitPattern: new RegExp(bodyClosePattern.source + '$'), 
             sigil: bodySigil, 
             encompass: true, 
             lookaheadN: 1024, 
@@ -250,9 +259,9 @@ export function HConLM(visions: CursedDataGazer, hasBody: boolean, fragmentNames
         visions.lens({ creed: { [`${bodySigil}.Inner`]: 'prosyletize' } }, bodySigil)
         retVal.body = bodySigil
 
-        const { endTruth: preBodyEnd } = (DL.lensedCapture(/<body\s*[^<>]*>/))
-        const { startTruth: postBodyStart } = (DL.lensedCapture(/<\/body\s*[^<>]*>/))
-        const prBS = 'pre' + bodySigil
+        const { endTruth: preBodyEnd } = (DL.lensedCapture(bodyOpenPattern))
+        const { startTruth: postBodyStart } = (DL.lensedCapture(bodyClosePattern))
+        const prBS = 'pre'  + bodySigil
         const poBS = 'post' + bodySigil
         visions.brandRange(prBS, 0, preBodyEnd)
         visions.brandRange(poBS, postBodyStart)
@@ -269,11 +278,11 @@ export function HConLM(visions: CursedDataGazer, hasBody: boolean, fragmentNames
         const captures = visions.getLens('default').lensedCaptureAll(targetMatcher)
 
         if (!captures || !captures.length) {
-            pprintProblem(null, `Tag with ID '${frn}' not found.`, true)
+            pprintProblem(1, `HConLensMap: ID '${frn}' not found. Probably a bug.`, true)
         }
 
         if (captures.length > 1) {
-            pprintProblem(null, `Multiple tags with ID '${frn}'.`, true)
+            pprintProblem(1, `Multiple tags with ID '${frn}'.`, true)
         }
 
         let { groups } = captures[0]

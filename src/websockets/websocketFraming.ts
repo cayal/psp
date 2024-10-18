@@ -1,6 +1,7 @@
 import { Socket } from "net"
 import { MessagePort } from "worker_threads"
 import { PukableEntrypoint } from "./src/pukables/entrypoints"
+import { L } from "../fmt/logging"
 
 const DEBUG_TIMEOUTS = false
 const DEBUG_CONNECTIONS = false
@@ -157,7 +158,7 @@ export function WSChangeset(changeReceiver: MessagePort) {
 
         if ((Date.now() - lastPongTime) > (_interval + _deadline)) {
             if (DEBUG_TIMEOUTS) {
-                process.stderr.write(`(Sock#${id}) | Timed out: ${Date.now() - lastPongTime}. Stopping pings. \n`)
+                L.log(`(Sock#${id}) | Timed out: ${Date.now() - lastPongTime}. Stopping pings. \n`)
             }
             clearTimeout(timerId)
             sk.destroy()
@@ -195,7 +196,7 @@ export function WSChangeset(changeReceiver: MessagePort) {
 
         if (!socket.id) { socket.id = _nextSid++ }
         if (DEBUG_CONNECTIONS) {
-            process.stderr.write(`(Sock#${socket.id}) | Created build listener.\n`)
+            L.log(`(Sock#${socket.id}) | Created build listener.\n`)
         }
 
         if (!buildListeners[socket.id]) {
@@ -205,14 +206,14 @@ export function WSChangeset(changeReceiver: MessagePort) {
                 cb: (ev: Event & { data: string }) => {
                     let [mode, pName] = ev.data.split(" ")
 
-                    if (DEBUG_CONNECTIONS) { process.stderr.write(`(Sock#${socket.id}) | Received ${ev.data} event.\n`) }
+                    if (DEBUG_CONNECTIONS) { L.log(`(Sock#${socket.id}) | Received ${ev.data} event.\n`) }
 
                     if (mode == "built") {
                         const pukerDatas = relpathsToPukers[pName]
                         for (let p of pukerDatas) {
                             let wp = `changed ${p.ownLink.webpath}`
 
-                            if (DEBUG_CONNECTIONS) { process.stderr.write(`(Sock#${socket.id}) | -> '${wp}'\n`) }
+                            if (DEBUG_CONNECTIONS) { L.log(`(Sock#${socket.id}) | -> '${wp}'\n`) }
 
                             socket.write(prepareFrame(wp))
                         }

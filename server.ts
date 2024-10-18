@@ -8,52 +8,44 @@ import { PukableEntrypoint } from './src/pukables/entrypoints';
 import { HData, LinkPeeps, LinkPeepLocator, PLink, QF, PLinkLocable } from './src/paths/linkPeeping';
 import { PukableSlotPocket } from './src/pukables/slotPockets';
 import { FSPeep, FSPeepRoot } from './src/paths/filePeeping';
-import { PP } from './ppstuff.js';
+import { PP } from './src/fmt/ppstuff.js';
 import { Socket } from 'node:net';
 import { decodeFrames, pongFrame, prepareFrame, WSChangeset } from './src/websockets/websocketFraming';
+import { L } from './src/fmt/logging';
 
-process.stderr.write(`Hi (${process.pid})\n`)
 
-let cannotPuke = false
+L.log(`Hi (${process.pid})\n`)
 
 const WEBROOT = 'web'
 const RELOADER_SCRIPT = '\n<script>\n' +  readFileSync('./src/websockets/websocketReloading.js', 'utf-8') + '\n</script>\n'
+let cannotPuke = false
+
 const { port1: changeReceiver, port2: changeTransmitter } = new MessageChannel()
 
-performance.mark('A')
-const webrootDir = FSPeepRoot({ entrypoint: WEBROOT })
-performance.mark('B')
+const webpathsToPukers: { [webpath: string]: PukableEntrypoint } = {}
 
-performance.measure('Built file tree in', 'A', 'B')
-
-process.stderr.write(`Serving from: ${webrootDir.relpath}\n`)
-for (let l of webrootDir.repr()) {
-    process.stderr.write(l)
-}
-
-webrootDir.getWatcher(changeTransmitter)
+let relpathsToPukers: { [relpath: string]: PukableEntrypoint[] } = {}
 
 const obs = new PerformanceObserver((items) => {
-    process.stderr.write(`${items.getEntries()[0].name} in ${items.getEntries()[0].duration} ms\n`);
+    L.log(`${items.getEntries()[0].name} in ${items.getEntries()[0].duration} ms\n`);
     performance.clearMarks();
 });
 
 obs.observe({ type: 'measure' });
 
+performance.mark('a')
 
-function enumerateIndexes(peep: FSPeep) {
-    if (peep.imp == 'd') {
-        return peep
-            .getDescendants()
-            .flatMap(enumerateIndexes)
-    }
-    else if (peep.relpath.split('/').slice(-1)?.[0] == 'index.html') {
-        return [peep]
-    } else {
-        return []
-    }
+const webrootDir = FSPeepRoot({ entrypoint: WEBROOT })
+const indexFSPeeps = webrootDir.peepReduce(((acc, peep) => peep.path.base == 'index.html' ? acc.concat(peep) : acc), [])
+webrootDir.getWatcher(changeTransmitter)
+
+performance.mark('b')
+performance.measure('Built file watch tree', 'a', 'b')
+
+L.log(`Serving from: ${webrootDir.relpath}\n`)
+for (let l of webrootDir.repr()) {
+    L.log(l)
 }
-
 
 const server = createSecureServer({
     maxSessionMemory: 1000,
@@ -62,15 +54,14 @@ const server = createSecureServer({
     cert: readFileSync('localhost.pem'),
 })
 
-const idxFSPeeps = webrootDir.peepReduce(((acc, peep) => peep.path.base == 'index.html' ? acc.concat(peep) : acc), [])
-process.stderr.write(PP.styles.pink + `\n> Using ${PP.ar(idxFSPeeps.map((i: any) => i.relpath))} as entrypoints. \n` + PP.styles.none)
-const webpathsToPukers: { [webpath: string]: PukableEntrypoint } = {}
-const relpathsToPukers: { [relpath: string]: PukableEntrypoint[] } = {}
 
-const build = (pLinks: LinkPeeps, relpathToBuild?: string) => {
+L.log(PP.styles.pink + `\n> Using ${PP.ar(indexFSPeeps.map((i: any) => i.relpath))} as entrypoints. \n` + PP.styles.none)
+
+const build = async (pLinks: LinkPeeps, relpathToBuild?: string) => {
+    relpathsToPukers = {}
     const loc = LinkPeepLocator(pLinks)
 
-    const buildSet = relpathToBuild ? [pLinks.links.find(l => l.relpath === relpathToBuild)] : idxFSPeeps
+    const buildSet = relpathToBuild ? [pLinks.links.find(l => l.relpath === relpathToBuild)] : indexFSPeeps
     if (!buildSet) {
         console.error('Nothing to build.')
         cannotPuke = true;
@@ -79,15 +70,22 @@ const build = (pLinks: LinkPeeps, relpathToBuild?: string) => {
 
     let entrypointsBuilt = []
     try {
+
+        performance.mark('a')
         for (let iPeep of buildSet) {
             const entrypoint = new PukableEntrypoint(loc, iPeep.relpath, undefined, RELOADER_SCRIPT)
             webpathsToPukers[entrypoint.ownLink.webpath] = entrypoint
 
-            entrypoint.getAssociatedFilenames()
+            for (let assoc of entrypoint.getAssociatedFilenames()) {
+                if (!relpathsToPukers[assoc]) { relpathsToPukers[assoc] = []}
+                relpathsToPukers[assoc].push(entrypoint)
+            }
 
             relpathsToPukers[entrypoint.ownLink.relpath] = [entrypoint]
             entrypointsBuilt.push(entrypoint)
         }
+        performance.mark('b')
+        performance.measure('Built PukableEntrypoints from index files', 'a', 'b')
     } catch (e) {
         console.error(e)
         console.error("Ran into a problem building files.")
@@ -99,27 +97,26 @@ const build = (pLinks: LinkPeeps, relpathToBuild?: string) => {
     }
 }
 
-
-build(LinkPeeps({ entrypoint: webrootDir }))
+let buildTask = build(LinkPeeps({ entrypoint: webrootDir }))
 
 let enqueueReplRepr = null;
 changeReceiver.addEventListener("message", (ev: MessageEvent) => {
 
     let [mode, relpath] = ev.data.split(" ")
     if (mode == "change") {
-        build(LinkPeeps({entrypoint: webrootDir}), relpath)
+        buildTask = build(LinkPeeps({entrypoint: webrootDir}), relpath)
         enqueueReplRepr = relpath
         changeTransmitter.postMessage(`built ${relpath}`)
     } else if (mode == 'built' && (relpath === enqueueReplRepr)) {
         let builtPoint = relpathsToPukers[relpath][0]
         for (let devInfo of builtPoint.debugRepr()) {
-            process.stderr.write(devInfo)
+            L.log(devInfo)
         }
         enqueueReplRepr = null
     }
 })
 
-server.on('stream', (stream, headers) => {
+server.on('stream', async (stream, headers) => {
     if (headers[':method'] != 'GET') {
         stream.respond({
             'content-type': 'text/html; charset=utf-8',
@@ -142,7 +139,7 @@ server.on('stream', (stream, headers) => {
             ':status': 200,
         });
 
-        webpathsToPukers[chunkProvider.ownLink.webpath] = build(pLinks, chunkProvider.ownLink.relpath).entrypointsBuilt[0]
+        await buildTask
 
         let entrypoint  = webpathsToPukers[chunkProvider.ownLink.webpath]
 
@@ -217,7 +214,7 @@ const websocket = createServer({
     })
 
     socket.addListener("close", () => {
-        process.stderr.write(`(Sock#${socket.id}) | Socket closing.\n`)
+        L.log(`(Sock#${socket.id}) | Socket closing.\n`)
         changeReceiver.removeListener("message", changeset.listeners[socket.id].cb)
         socket.end()
         socket.destroy()
@@ -282,7 +279,7 @@ const websocket = createServer({
 
                     socket.write(rb)
                     socket.write(prepareFrame(`hi ${socket.id}`))
-                    process.stderr.write(`(Sock#${socket.id}) Updater connected. Starting pings. \n`)
+                    L.log(`(Sock#${socket.id}) Updater connected. Starting pings. \n`)
                     changeset.startPings(socket.id)
                     return
                 }
@@ -299,7 +296,7 @@ function onSIGTERM() {
 }
 
 websocket.listen(80)
-process.stderr.write(PP.styles.blue + "websocket | Listening on port 80...\n" + PP.styles.none)
+L.log(PP.styles.blue + "websocket | Listening on port 80...\n" + PP.styles.none)
 
 server.listen(3003)
-process.stderr.write(PP.styles.blue + "https | Listening on port 3003...\n" + PP.styles.none)
+L.log(PP.styles.blue + "https | Listening on port 3003...\n" + PP.styles.none)

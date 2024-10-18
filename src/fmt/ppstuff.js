@@ -1,4 +1,5 @@
 import { formatWithOptions } from "util"
+import { L } from './logging'
 
 class PPStylin {
     #privates = {
@@ -27,6 +28,14 @@ class PPStylin {
     
     some(...stuff) { 
         return `\x1b[${stuff.map(s=>this.#privates[s]).filter(x=>!!x).join(';')}m` 
+    }
+    
+    constructor(bstylin=true) {
+        if (!bstylin) { 
+            this.#privates = Object.fromEntries(
+                Object.entries(this.#privates).map(([k, _])=>[k, '']))
+            this.some = (..._) => ''
+        }
     }
 
     get none()      { return this.some('none') }
@@ -94,11 +103,11 @@ export const PP = (function() {
      * @param {number} n suffix width. Default 3 (10% dup odds at ~75 items), also sus that I should care about dup odds for a function declared in a pretty print helper. I wonder if somebody's about to use this for something more functionally significant than would be wise
      * @returns 
      */
-    function shortcode(s='', n=3) {
+    function shortcode(s='', n=3, sep='-') {
         const cashMoneyB64digits = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRS$TUVWXY¥Z0123456789'
         const prefix = !s.length ? '' : s.split('').map(x => oneChar(x)).join('')
         const suffix = Array(n).fill(0).map((_) => cashMoneyB64digits[Math.floor(Math.random()*64)]).join('')
-        return `${prefix}#${suffix}`
+        return `${prefix}${sep}${suffix}`
     }
 
     return {
@@ -114,15 +123,28 @@ export const PP = (function() {
         spaces,
         padded,
         oneChar,
+        nostylin: () => {
+            let nos = new PPStylin(false)
+            return { ...PP, styles: nos, colors: nos}
+        },
         shortcode
     }
 }())
 
-export function pprintProblem(title, lineno, msg, asError, citationText={at: '', before: [], after: []}) {
+export function pprintProblem(title,
+    lineno,
+    msg,
+    asError,
+    citationText = { at: '', before: [], after: [] }
+) {
     const MAXLEN = 60
+    let _y = PP.styles.yellow
+    let _r = PP.styles.yellow
+    let _ø = PP.styles.none
 
-    process.stderr.write('\n')
-    let log = asError ? (s) => { console.error(s) } : (s) => console.warn(s)
+    L.log('\n')
+    let log = asError ? (s) => { L.log('\n' + _r + s + _ø) } : (s) => L.log('\n' + _y + s + _ø)
+
     const cite = structuredClone(citationText)
     
     if (cite.at.length > MAXLEN) {
@@ -162,7 +184,9 @@ export function pprintProblem(title, lineno, msg, asError, citationText={at: '',
 
     log('| ' + msg)
     log('\\' + Array(msg.length).fill('-').join(''))
+    log('\n')
     if (asError) {
         throw new Error(msg) 
     }
 }
+

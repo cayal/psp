@@ -3,6 +3,7 @@ import { FSPeep } from '../paths/filePeeping';
 import { HData, LinkPeeps, LinkPeepLocator, PLink, PeepedLinks, QF, LinkLocator, indeedHtml, PLinkLocable, Queried, HconLensMap } from '../paths/linkPeeping.js';
 import { PP, pprintProblem } from '../fmt/ppstuff.js';
 import { CursedDataGazer } from '../textEditing/evilCurses';
+import { L } from '../fmt/logging';
 
 let ti = `<!doctype html>
 <html>
@@ -47,7 +48,7 @@ export class PukableEntrypoint {
         let ownLink = indeedHtml(rootLoc(relpath)('.'))
 
         this.id = Symbol(PP.shortcode(`@${ownLink.relpath}${ownLink.fragment || ''}|`))
-        process.stderr.write(PP.styles.yellow + `\n<| Building entrypoint: ${this.id.description}...` + PP.styles.none)
+        L.log(PP.styles.yellow + `\n<| Building entrypoint: ${this.id.description}...` + PP.styles.none)
 
         if (ownLink.result.type !== 'okHtml') {
             throw new ReferenceError(`${ownLink.relpath} did not resolve to an HTML file.`)
@@ -93,7 +94,7 @@ export class PukableEntrypoint {
         this.#gazer.getLens(this.#bodyPartLensMap.postBody)
             .refocus({creed: {[this.#bodyBarfer.slurpMarker]: 'shun' }})
         
-        process.stderr.write('\n')
+        L.log('\n')
 
     }
 

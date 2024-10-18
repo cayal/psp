@@ -1,7 +1,7 @@
 import { existsSync, link, readFileSync, statSync } from "fs";
 import { CursedDataGazer as CursedDataGazer, ShatteredMemory } from "../textEditing/evilCurses";
 import { FSPeep } from "./filePeeping";
-import { PP } from "../../ppstuff.js";
+import { PP, pprintProblem } from "../fmt/ppstuff.js";
 import { join, relative, resolve } from "path";
 import { ModalCharGaze } from "./charGazing.js";
 import { isAscii, isUtf8 } from "buffer";
@@ -85,7 +85,7 @@ export type Queried = { type: PLink["type"] } & QF & {
 
 export function indeedHtml(q: Queried | { type: '404', reason: string }): PLink & Queried & { type: 'html' } {
     if (q.type === '404') {
-        throw new ReferenceError(`Could not find self: ${q.reason}`)
+        throw new ReferenceError(q.reason)
     }
 
     if (q.type === 'dir') {
@@ -93,7 +93,7 @@ export function indeedHtml(q: Queried | { type: '404', reason: string }): PLink 
     }
 
     if (q.type === 'file') {
-        throw new ReferenceError(`Link result is a file.`)
+        throw new ReferenceError(`Link result is a non-HTML file.`)
     }
 
     return q as PLink & Queried & { type: 'html' }
@@ -132,7 +132,11 @@ function PLQ(from: Exclude<PLink, { type: 'dir' }>, respondingTo: QF): PLink & Q
     function _getGazedMarkup() {
         const gazer = new CursedDataGazer(ShatteredMemory({ content: (from.ogPeep.contents as string) }))
         const content = gazer.lens({ creed: { comment: 'shun' } }, 'default')
-        content.dichotomousJudgement('<!--', '-->', 'comment')
+        content.dichotomousJudgement({
+            entryPattern: '<!--', 
+            exitPattern: '-->', 
+            sigil: 'comment'
+        })
         const hasBody = content.image.match(/<body.*>/gs) !== null
         const fragmentNames = [...content.image.matchAll(/id=['"]([^\t\n\f \/>"'=]+)['"]/gs)].map(m => m[1])
         if (fragment && !fragmentNames.includes(fragment)) {
@@ -235,7 +239,14 @@ export function HConLM(visions: CursedDataGazer, hasBody: boolean, fragmentNames
         const bodyOpenPattern = /^<body\s*[^<>]*>/
         const bodyClosePattern = /<\/body[^<>]*>$/
         const bodySigil = uniquing('body')
-        DL.dichotomousJudgement(bodyOpenPattern, bodyClosePattern, bodySigil, true, 1024, 1024)
+        DL.dichotomousJudgement({
+            entryPattern: bodyOpenPattern, 
+            exitPattern: bodyClosePattern, 
+            sigil: bodySigil, 
+            encompass: true, 
+            lookaheadN: 1024, 
+            lookbehindN: 1024
+        })
         visions.lens({ creed: { [`${bodySigil}.Inner`]: 'prosyletize' } }, bodySigil)
         retVal.body = bodySigil
 
@@ -253,18 +264,32 @@ export function HConLM(visions: CursedDataGazer, hasBody: boolean, fragmentNames
 
     for (let frn of fragmentNames) {
         if (frn === '') { continue }
-        const targetMatcher = new RegExp(`<([a-zA-Z\-]+)[^<>]+id=['"]${frn}['"][^<>]*>`) // sosumi
-        const { _0, groups } = visions.getLens('default').lensedCapture(targetMatcher)
-        const [_1, tagName] = groups
 
-        const tfOpenPattern = new RegExp(`^<${tagName}[^<>]*>`)
+        const targetMatcher = new RegExp(`<([a-zA-Z\-]+)[^<>]+id=['"]${frn}['"][^<>]*>`, 'g') // sosumi
+        const captures = visions.getLens('default').lensedCaptureAll(targetMatcher)
+
+        if (!captures || !captures.length) {
+            pprintProblem(null, `Tag with ID '${frn}' not found.`, true)
+        }
+
+        if (captures.length > 1) {
+            pprintProblem(null, `Multiple tags with ID '${frn}'.`, true)
+        }
+
+        let { groups } = captures[0]
+        const [tag, tagName] = groups
+
         const tfClosePattern = new RegExp(`</${tagName}[^<>]*>$`)
-        const targetRanges = visions.getLens('default').dichotomousJudgement(tfOpenPattern, tfClosePattern, frn, true, 1024, 1024)
+        const targetRanges = visions.getLens('default').dichotomousJudgement({
+            entryPattern: tag, 
+            exitPattern: tfClosePattern, 
+            sigil: frn, 
+            encompass: true, 
+            lookbehindN: 256 
+        })
         if (!targetRanges || !targetRanges.length) {
-            DL.pprintProblemLine(null, `Tag with ID '${frn}' not found.`, true)
-        } else if (targetRanges.length > 1) {
-            DL.pprintProblemLine(null, `Multiple tags with ID '${frn}'.`, true)
-        } else {
+            pprintProblem(null, `Tag with ID '${frn}' not found.`, true)
+        }  else {
             const frnBrand = uniquing(frn)
             visions.lens({ creed: { [frn + '.Inner']: 'prosyletize' } }, frnBrand)
             retVal.fragments[frn] = frnBrand

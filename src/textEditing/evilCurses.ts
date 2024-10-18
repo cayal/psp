@@ -1,4 +1,4 @@
-import { PP } from "../../ppstuff"
+import { PP } from "../fmt/ppstuff"
 import { ModalCharGaze } from "../textEditing/charGazer"
 import { assert } from "console"
 import { format } from "util"
@@ -20,8 +20,19 @@ export type LensOptions = {
 
 export type CursedRangedOpRes = {
     chars: string,
+    startSourceLine:number,
+    startSourceOffset:number,
     endSourceLine: number,
     endSourceOffset: number
+}
+
+type DJOpts = {
+    entryPattern: string | RegExp,
+    exitPattern: string | RegExp,
+    sigil?: string,
+    encompass?: boolean,
+    lookaheadN?: number,
+    lookbehindN?: number
 }
 
 export type CLOCPointer = { voice: string, sigils: string[], truth: number, linenoTruth: number }
@@ -30,6 +41,7 @@ export interface CursedLens {
         lensOpts: string,
         invalidatePointers: () => void,
         refocus: (newOpts: Partial<LensOptions>) => void,
+        retome: (newTome: CursedDataGazer) => void,
         point: (offset: number) => CLOCPointer,
         shine: (startOffset?: number) => Generator<CLOCPointer>
         selectOnce: (lensOpts: LensOptions) => string,
@@ -51,13 +63,8 @@ export interface CursedLens {
         lensedDestroy: (offset, count) => CursedRangedOpRes
         lensedIntrude: (offset: number, content: string, sigils: string[]) => number
         lensedLiftRanges(...cutPointOffsets: [number, number][]): CursedDataGazer[]
-        dichotomousJudgement: (entryPattern: string|RegExp,
-            exitPattern: string|RegExp,
-            sigil?: string,
-            encompass?: boolean,
-            lookaheadN?: number,
-            lookbehindN?: number
-        ) => CursedRangedOpRes[]
+
+        dichotomousJudgement: (opts: DJOpts) => CursedRangedOpRes[]
         stashCreed: (sigil: string) => void
         popCreed: () => void
         lensedBrandRange: (sigil: string, 
@@ -80,9 +87,14 @@ export class CursedDataGazer {
 
     #lenses: {[lensName: string]: CursedLens} = {}
 
-    constructor(memory: ShatteredMemory) {
+    constructor(memory: ShatteredMemory, lenses?: {[lensName: string]: CursedLens}) {
         this.#memory = memory
         this.id = Symbol(PP.shortcode('anth'))
+        if (lenses) { 
+            for (let [k, l] of Object.entries(lenses)) {
+                this.lens(l.lensOpts, k)
+            }
+        }
     }
 
     get totalLength() { return this.#memory.length }
@@ -238,6 +250,28 @@ export class CursedDataGazer {
         this.#invalidateLenses()
         return destroyed
     }
+    
+    shatterBySigil(removingSigilName: string): CursedDataGazer[] {
+        let ranges = ShatOps.selectBySigil(this.#memory, removingSigilName)
+        let cuts = []
+        let highlightStart = 0, highlightEnd
+        for (let [start, end] of ranges) {
+            highlightEnd = start
+            cuts.push([highlightStart, highlightEnd])
+            highlightStart = end
+        }
+        
+        let shards = []
+        let last = 0
+        for (let [start, end] of cuts) {
+            shards.push(new CursedDataGazer(this.#memory.sliceShard(start, end), this.#lenses))
+            last = end
+        }
+
+        shards.push(new CursedDataGazer(this.#memory.sliceShard(last, this.#memory.length), this.#lenses))
+
+        return shards
+    }
 
     brandRange(sigil, start = 0, end = this.totalLength) {
         if (!sigil) { throw new TypeError('sigil required') }
@@ -353,6 +387,11 @@ export class CursedDataGazer {
 
             return this
         }
+        
+        retome(newTome: CursedDataGazer) {
+            this.#tome = newTome
+            this.invalidatePointers()
+        }
 
         point(offset) {
             this.#guardOffset(offset)
@@ -460,13 +499,14 @@ export class CursedDataGazer {
          * @param {function(Evidence): void} judgement 
          * @returns 
          */
-        dichotomousJudgement(entryPattern,
+        dichotomousJudgement({
+            entryPattern,
             exitPattern,
             sigil,
-            encompass = true,
-            lookaheadN?: number,
-            lookbehindN?: number
-        ) {
+            encompass=true,
+            lookaheadN,
+            lookbehindN
+        }:DJOpts) {
             const ranges = ModalCharGaze(this.image, entryPattern, exitPattern, lookaheadN, lookbehindN)
 
             let retVal = [];
@@ -545,20 +585,29 @@ export class CursedDataGazer {
             return this.#tome.takeLines(sourceLineNumber, contextBefore, contextAfter)
         }
 
-        summonBugs(title = '', depth = 0, cWidth = 3, maxCols = 20, offsetBase = 32) {
+        summonBugs({
+            colors=true,
+            title = '', 
+            depth = 0, 
+            cWidth = 3, 
+            maxCols = 20, 
+            offsetBase = 32
+        }={}) {
+            let pp = PP
+            if (!colors) { pp = pp.nostylin() }
             const idMaxW = 8
 
             let tt = title ? ' | ' + title : ''
-            const bar = PP.styles.blue + '|' + PP.styles.none
+            const bar = pp.styles.blue + '|' + pp.styles.none
             const ownid = '(' + this.id.description + tt + ')';
-            const indent = PP.spaces(depth)
+            const indent = pp.spaces(depth)
             let sent = ''
             const send = (s) => {
                 process.stderr.write(s)
                 sent += s.replaceAll(new RegExp('\x1b\\[[0-9][0-9]?m', 'g'), '')
             }
 
-            send(PP.styles.blue + ownid + '\n' + PP.styles.none)
+            send(pp.styles.blue + ownid + '\n' + pp.styles.none)
             send(bar + "lensOpts:\n")
             send(JSON.stringify(this.#lensOpts, undefined, 4).replace(/^/msg, bar + " ") + '\n')
 
@@ -582,23 +631,23 @@ export class CursedDataGazer {
                 return acc
             }, {})
 
-            send(bar + PP.spaces(7, '-') + 'shown:' + PP.spaces(7, '-') + '\n')
+            send(bar + pp.spaces(7, '-') + 'shown:' + pp.spaces(7, '-') + '\n')
             send('\n')
 
             send(bar)
             for (let i = 0; i < this.image.length; i++) {
                 const { voice, sigils } = this.#pointers[i]
                 if (sigils.length > 1) {
-                    send(PP.styles.some(...sigils.map(s => colorPlan[s])))
+                    send(pp.styles.some(...sigils.map(s => colorPlan[s])))
                 } else if (sigils.length == 1) {
-                    send(PP.styles[colorPlan[sigils[0]]])
+                    send(pp.styles[colorPlan[sigils[0]]])
                 }
-                send(voice == '\n' ? voice + PP.styles.none + bar : voice)
-                send(PP.styles.none)
+                send(voice == '\n' ? voice + pp.styles.none + bar : voice)
+                send(pp.styles.none)
             }
             send('\n')
 
-            send(bar + PP.spaces(7, '-') + 'full:' + PP.spaces(8, '-') + '\n')
+            send(bar + pp.spaces(7, '-') + 'full:' + pp.spaces(8, '-') + '\n')
             const optStash = structuredClone(this.#lensOpts)
             this.#lensOpts.includeConfabulated = true
             this.#lensOpts.includeDestroyed = true
@@ -608,26 +657,26 @@ export class CursedDataGazer {
             for (let i = 0; i < this.image.length; i++) {
                 const { voice, sigils } = this.#pointers[i]
                 if (sigils.length > 1) {
-                    send(PP.styles.some(...sigils.map(s => colorPlan[s])))
+                    send(pp.styles.some(...sigils.map(s => colorPlan[s])))
                 } else if (sigils.length == 1) {
-                    send(PP.styles[colorPlan[sigils[0]]])
+                    send(pp.styles[colorPlan[sigils[0]]])
                 }
-                send(voice == '\n' ? voice + PP.styles.none + bar : voice)
-                send(PP.styles.none)
+                send(voice == '\n' ? voice + pp.styles.none + bar : voice)
+                send(pp.styles.none)
             }
             send('\n')
 
-            send(bar + PP.spaces(6, '-') + 'sigils:' + PP.spaces(7, '-') + '\n')
+            send(bar + pp.spaces(6, '-') + 'sigils:' + pp.spaces(7, '-') + '\n')
             for (let [k, v] of Object.entries(colorPlan)) {
                 send(bar + " ")
                 const color = (k.endsWith('.Open') || k.endsWith('.Inner') || k.endsWith('.Close'))
-                    ? PP.styles.some(colorPlan[k.split('.')[0]], v)
-                    : PP.styles[v]
-                send(`${color}#${k}${PP.styles.none}`)
+                    ? pp.styles.some(colorPlan[k.split('.')[0]], v)
+                    : pp.styles[v]
+                send(`${color}#${k}${pp.styles.none}`)
                 send('\n')
             }
 
-            send(bar + PP.styles.blue + PP.spaces(20, '_') + `/${ownid}` + PP.styles.none)
+            send(bar + pp.styles.blue + pp.spaces(20, '_') + `/${ownid}` + pp.styles.none)
             send('\n')
             this.#lensOpts = optStash
             this.#_ptrs = undefined
@@ -1206,27 +1255,29 @@ if (import.meta.vitest) {
     test('judgements', () => {
         let caComments = new CursedDataGazer(ShatteredMemory({ content: '<title>Hello<!---></title><h1><!--exclude me--></h1>' }))
         let l = caComments.lens()
-        l.dichotomousJudgement('<!--', '-->')
+        l.dichotomousJudgement({entryPattern: '<!--', exitPattern: '-->'})
         expect(l.image).toBe('<title>Hello</title><h1></h1>')
 
         let caComments2 = new CursedDataGazer(ShatteredMemory({ content: '<title>Hello<!---></title><h1><!--exclude me--></h1>' }))
         let l2 = caComments2.lens({ creed: { comment: 'shun' } })
-        l2.dichotomousJudgement('<!--', '-->', 'comment')
+        l2.dichotomousJudgement({entryPattern: '<!--', exitPattern: '-->', sigil: 'comment'})
         expect(l2.image).toBe('<title>Hello</title><h1></h1>')
     })
 
     test('selections and replacements', () => {
         let gumpo = new CursedDataGazer(ShatteredMemory({ content: 'I dont know some type of gumpo guy i can be anything' }))
         let l = gumpo.lens()
-        l.dichotomousJudgement('of', 'guy', 'spoop')
+        l.dichotomousJudgement({entryPattern: 'of', exitPattern: 'guy', sigil: 'spoop'})
         l.replaceBySigil('spoop', 'of shoop fella')
         expect(l.image).toBe('I dont know some type of shoop fella i can be anything')
     })
 }
 
-const rangedOpReducer = (acc, { char, truth, linenoTruth }) =>
+const rangedOpReducer = (acc, { char, truth, linenoTruth }, i) =>
 ({
     chars: (acc?.chars ?? "") + char,
+    startSourceOffset: i === 0 ? truth : acc.startSourceOffset,
+    startSourceLine: i === 0 ? linenoTruth : acc.startSourceLine,
     endSourceLine: linenoTruth,
     endSourceOffset: truth
 })

@@ -1,2 +1,13 @@
-<h1>My favorite sentence</h1>
-<slot name="greeting">Hello there yall</slot>
+<style>
+    .card-wrapper {
+        outline: 1px solid lavender;
+        border-radius: 3px;
+        background: white;
+        color: #333;
+        padding: 0.5em 1em 0.5em 1em ;
+    }
+</style>
+<article class="card-wrapper">
+    <h1><slot name="card-title">...</slot></h1>
+    <p><slot name="card-description">...</slot></p>
+</article>

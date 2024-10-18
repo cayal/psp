@@ -1,7 +1,7 @@
 import { PukableSlotPocket as PukableSlotPocket } from './slotPockets';
 import { FSPeep } from '../paths/filePeeping';
 import { HData, LinkPeeps, LinkPeepLocator, PLink, PeepedLinks, QF, LinkLocator, indeedHtml, PLinkLocable, Queried, HconLensMap } from '../paths/linkPeeping.js';
-import { PP, pprintProblem } from '../../ppstuff.js';
+import { PP, pprintProblem } from '../fmt/ppstuff.js';
 import { CursedDataGazer } from '../textEditing/evilCurses';
 
 let ti = `<!doctype html>
@@ -37,6 +37,8 @@ export class PukableEntrypoint {
     #bodyBarfer: PukableSlotPocket
     #bodyPartLensMap: HconLensMap
 
+    static slurpDeclPattern = /^<!slurp\s[^<>]*>$/
+
     constructor(rootLoc: PLinkLocable, relpath: string, hostTagName = "psp", reloaderScript = '') {
         if (!relpath) {
             throw new TypeError('Missing relpath.')
@@ -65,21 +67,38 @@ export class PukableEntrypoint {
         this.templateClose = `\n    </template>\n`
         this.hostClose = `</${hostTagName}-host>\n`
         
-        // #bodyBarfer's slurp sigil refers to the <!slurp declaration. 
-        // It should be shunned whether in the body, before, or after.
-        for (let {startTruth, endTruth} of this.#bodyBarfer.wholeFileSlurpDecls) {
-            this.#gazer.brandRange(this.#bodyBarfer.slurpSigil, startTruth, endTruth)
-        }
+        // #bodyBarfer brands its '<!slurp>' declarations (even outside the juice)
+        // with its slurpSigil. PSPs will only blow chunks from the juice, while a 
+        // PEP, when blowing chunks before and after the juice,  should still shun 
+        // the slurps wherever they are.
+        this.#gazer.getLens(this.#bodyPartLensMap.preBody)
+            .dichotomousJudgement({
+                entryPattern: '<!slurp',
+                exitPattern: PukableEntrypoint.slurpDeclPattern,
+                sigil: this.#bodyBarfer.slurpMarker,
+                lookbehindN: 256
+            })
 
-        this.#gazer.getLens(this.#bodyPartLensMap.preBody).refocus({creed: {[this.#bodyBarfer.slurpSigil]: 'shun'}})
-        this.#gazer.getLens(this.#bodyPartLensMap.postBody).refocus({creed: {[this.#bodyBarfer.slurpSigil]: 'shun'}})
+        this.#gazer.getLens(this.#bodyPartLensMap.preBody)
+            .refocus({creed: {[this.#bodyBarfer.slurpMarker]: 'shun' }})
+            
+        this.#gazer.getLens(this.#bodyPartLensMap.postBody)
+            .dichotomousJudgement({
+                entryPattern: '<!slurp',
+                exitPattern: PukableEntrypoint.slurpDeclPattern,
+                sigil: this.#bodyBarfer.slurpMarker,
+                lookbehindN: 256
+            })
+
+        this.#gazer.getLens(this.#bodyPartLensMap.postBody)
+            .refocus({creed: {[this.#bodyBarfer.slurpMarker]: 'shun' }})
         
         process.stderr.write('\n')
 
     }
 
     getAssociatedFilenames() {
-        return [this.ownLink.relpath, ...this.#bodyBarfer.slurps]
+        return [this.ownLink.relpath, ...this.#bodyBarfer.deepGetAssocFilenames()]
     }
 
     *blowChunks() {
@@ -88,11 +107,11 @@ export class PukableEntrypoint {
 
         yield preBody
         yield this.reloaderScript
-        yield this.#bodyBarfer.styleContent.join('\n')
+        yield* this.#bodyBarfer.deepGetStyleContent().join('\n')
         yield this.bodyPreamble
         yield* this.#bodyBarfer.blowChunks()
         yield this.templateClose
-        yield this.#bodyBarfer.slotSlippers.map(({markup})=>markup + '\n').join('')
+        yield this.#bodyBarfer.deepGetPukableBubbles().map(x => x.digestedMarkup).join('\n')
         yield this.hostClose
         yield postBody
     }

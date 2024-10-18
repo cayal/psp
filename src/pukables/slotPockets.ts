@@ -1,38 +1,115 @@
-import { link, readFileSync } from "fs"
-import { dirname } from "path"
 import { FSPeep } from "../paths/filePeeping"
-import { PP, pprintProblem } from "../../ppstuff.js"
+import { PP, pprintProblem } from "../fmt/ppstuff.js"
 import { PLink, LinkPeeps, LinkPeepLocator, PeepedLinkResolution, QF, LinkLocator, indeedHtml, PLinkLocable, Queried } from "../paths/linkPeeping"
 import { CursedDataGazer, CursedLens } from "../textEditing/evilCurses"
+import * as assert from "node:assert"
+
+const REASONABLE_TAG_LENGTH=256
+
+type RawSlurp = {
+    sourceLineno: number,
+    from: PLink & Queried & { type: 'html' },
+    as: string 
+}
+
+type PukableSlurp = RawSlurp & {
+    pocket: PukableSlotPocket
+}
+
+type RawBurp<Sl extends RawSlurp> = {
+    sym: symbol,
+    tagName: Sl["as"],
+    sourceStart: number,
+    sourceEnd: number,
+    sourceLineno: number,
+    rawInnerMarkup: string,
+    rawOpenTag: string,
+    rawCloseTag: string,
+    idAttr?: string
+}
+
+type RawSlot = {
+    slotName: string,
+    ownUname: string,
+    rawMarkup: string,
+    sourceLineno: number,
+    sourceStart: number,
+    sourceEnd: number
+}
+
+type ChunkFlavorTransformation = (halfBlownChunk: string) => string
+
+type PukableBurp<Psl extends PukableSlurp> =
+    & RawBurp<Psl>
+    & {
+        digestedOpenTag: string,
+        digestedCloseTag: string,
+        digestedInnerResidue: string,
+        juiceProvider: Psl,
+        chunkFlavorTransformation: ChunkFlavorTransformation
+    }
+
+
+type PukableBubble
+    <B extends RawBurp<Sl>, Sl extends RawSlurp> =
+    & RawBubble
+    & {
+        uniquingBy?: B["idAttr"]
+        digestedMarkup: string
+    }
+
+// Bubbles are <{TAGNAME} slot="{SLOTNAME}">...</{TAGNAME}>
+// or similar (any tag that names a slot, void tags OK too)
+// As the name implies, they bubble to the top level of the 
+// entrypoint's <psp-host> tag, and the entrypoint blows them 
+// after the </template> and before the </psp-host> close tags.
+type RawBubble =
+    { 
+        containingBurp: RawBurp<RawSlurp>,
+        sourceLineno: number,
+        rawMarkup: string,
+        slotAttr: string,
+    }
 
 export class PukableSlotPocket {
 
+    uname
     rootLoc
     reprName
-    slurpSigil: string
-    wholeFileSlurpDecls: {startTruth: number, endTruth: number}[] = []
-    #gazer: CursedDataGazer
-    #juiceSigilName: string
+    slurpMarker: string
+    burpBlockMarker: string
+    styleBlockMarker: string
+    juiceLensName: string
+
     #juiceLens: CursedLens
     #wholeFileLens: CursedLens
-    #ownLocator
+    #ownLocator: LinkLocator
     #ownLink: PLink & Queried & { type: 'html' }
     #includedFromChain
 
-    /** @type {Object<string, PukableSlotPocket>} */
-    #ownSlurpMap: {[as: string]: {
-        sourceLine: number,
-        pocket: PukableSlotPocket
-    }} = {}
-    #ownSlotNames = []
-    #ownSlotSlippers: {slotName: string, tagName: string, markup: string}[] = []
-    #ownStyleContent = []
+    #bolus: CursedDataGazer
+    #chunks: CursedDataGazer[]
+
+    #rawSlurps: RawSlurp[] = []
+    #rawSlots: RawSlot[] = []
+    #rawBurps: RawBurp<RawSlurp>[] = []
+    #rawBubbles: RawBubble[] = []
+
+    #pukableBubbles: PukableBubble<RawBurp<RawSlurp>, RawSlurp>[] = []
+
+    #slurpedSubPockets: PukableSlurp[] = []
+
+    #styleContent = []
+
     #validations: [number, string][] = []
 
-    static slurpDeclFromPattern = /^<!slurp [^<>]*from=['"]([^'"]+)['"][^<>]*>/
-    static slurpDeclAsPattern = /^<!slurp [^<>]*as=['"]([^'"]+)['"][^<>]*>/
-    static slotEnjoyerPattern = /<([a-zA-Z0-9\-]+)\s[^<>]*slot="?([^<>"]+)"?[^<>]*>.*<\/\1>/g
-    static getNamedTagPatterns = (name) => ({
+    static slurpDeclFromPattern = /^<!slurp\s[^<>]*from=['"]?([^'"]+)['"]?[^<>]*>/
+    static slurpDeclAsPattern = /^<!slurp\s[^<>]*as=['"]?([^'"]+)['"]?[^<>]*>/
+
+    static voidBubblePattern = /<(area|base|br|col|command|embed|hr|img|input|keygen|link|meta|param|source|track|wbr)\s[^<>]*slot=['"]?([^<>"]+)['"]?[^<>]*>/g // sosumi
+    static bubblePattern = /<([a-zA-Z0-9\-]+)\s[^<>]*slot=["']?([^<>"]+)['"]?[^<>]*>[^<]*<\/\1>/g 
+
+    static getBurpPatterns = (name) => ({
         presence: new RegExp(`<${name}(?:\\s*>|\\s[^<>]*>).*</${name}\\s*>`, 's'),
         entry: new RegExp(`^<${name}(?:\\s*>|\\s[^<>]*>)`),
         exit: new RegExp(`</${name}\\s*>$`),
@@ -44,7 +121,8 @@ export class PukableSlotPocket {
         this.#ownLocator = typeof targetPath == 'string' ? rootLoc(targetPath) : rootLoc(targetPath.relpath)
 
         this.#ownLink = indeedHtml(typeof targetPath == 'string' ? this.#ownLocator('.') : targetPath)
-        this.reprName = `<PSP @="${this.#ownLink.relpath}">`
+        this.uname = PP.shortcode()
+        this.reprName = `<PSP${this.uname} @="${this.#ownLink.relpath}">`
 
         const initStart = performance.now()
 
@@ -65,9 +143,8 @@ export class PukableSlotPocket {
         }
 
         const markupData = this.#ownLink.result.getData()
-        this.#gazer = markupData.gazer
+        this.#bolus = markupData.gazer
 
-        let juiceLensName
         if (this.#ownLink.fragment) {
             if (!("fragments" in markupData.lensNames) || !markupData.lensNames.fragments[this.#ownLink.fragment]) {
                 throw new ReferenceError(
@@ -75,207 +152,459 @@ export class PukableSlotPocket {
                     `but file only includes ${PP.o(markupData.lensNames.fragments)}`)
             }
 
-            juiceLensName = markupData.lensNames.fragments[this.#ownLink.fragment]
+            this.juiceLensName = markupData.lensNames.fragments[this.#ownLink.fragment]
         } else if (markupData.hasBody) {
-            juiceLensName = markupData.lensNames.body
+            this.juiceLensName = markupData.lensNames.body
         } else {
-            juiceLensName = markupData.lensNames.wholeFile
+            this.juiceLensName = markupData.lensNames.wholeFile
         }
 
-        this.#juiceLens = this.#gazer.getLens(juiceLensName)
-        this.#juiceSigilName = juiceLensName + '.Inner'
+        this.#juiceLens = this.#bolus.getLens(this.juiceLensName)
         this.#wholeFileLens = markupData.gazer.getLens(markupData.lensNames.wholeFile)
 
         if (!this.#juiceLens) {
-            this.#gazer.summonBugs()
-            pprintProblem(this.reprName, 0, `${this.#gazer.id.description} is missing lens ${juiceLensName}.`, true)
+            this.#bolus.summonBugs()
+            pprintProblem(this.reprName, 0, `${this.#bolus.id.description} is missing lens ${this.juiceLensName}.`, true)
         }
 
-        this.slurpSubPockets()
-        this.pocketOwnSlots()
-        this.slurpSlotSlippers()
-        this.slurpStyles()
+        let templ;
+        if (templ = this.#juiceLens.image.match(/<template[ >]/)) {
+            pprintProblem(this.reprName, templ[0].index, `Warning: Template tags not supported in PSP and they will be shunned.`, false)
+            let templateBlockMarker = PP.shortcode('template')
+            this.#juiceLens.dichotomousJudgement({entryPattern: /<template[ >]/, exitPattern: '</template>', lookaheadN: REASONABLE_TAG_LENGTH, sigil: templateBlockMarker})
+            this.#juiceLens.refocus({ creed: { [templateBlockMarker]: 'shun' } })
+        }
 
+        this.suckSlurps()
+
+        this.sniffRawSlots()
+
+        this.gobbleRawBurps()
+
+        this.suckRawBubbles()
+
+        this.gobbleRawStyles()
+
+        this.slurpSubPockets()
+        
         const initEnd = performance.now()
         process.stderr.write(`${arrow} Done (${(initEnd - initStart).toFixed(2)} ms).\n`)
         for (let line of this.debugRepr()) {
             process.stderr.write('\n' + line)
         }
     }
+    
+    deepGetStyleContent() {
+        return [this.#styleContent, ...this.#slurpedSubPockets.flatMap(x => x.pocket.deepGetStyleContent())]
+    }
 
     get ownFilename() {
         return this.#ownLink.relpath
     }
 
-    get assocFilenames() {
-        return [this.#ownLink.relpath,
-        ...Object.values(this.#ownSlurpMap).flatMap(x => x.pocket.assocFilenames),
+     deepGetAssocFilenames() {
+        return [
+            this.#ownLink.relpath,
+        ...this.#slurpedSubPockets.flatMap(x => x.pocket.deepGetAssocFilenames()),
         ]
     }
 
-    slurpSubPockets() {
-        const slurpDeclPattern = /<!slurp [^>]*>/g
-        this.slurpSigil = PP.shortcode('slurpDecl')
 
-        const slurpDecls = this.#wholeFileLens.lensedCaptureAll(slurpDeclPattern)
+    suckRawBubbles() {
+        const voidBubbles = this.#juiceLens.lensedCaptureAll(PukableSlotPocket.voidBubblePattern)
+        const bubbles = this.#juiceLens.lensedCaptureAll(PukableSlotPocket.bubblePattern)
+
+        for (let { startTruth, endTruth, endSourceLine, groups } of [...voidBubbles, ...bubbles]) {
+            let containingBurp
+            if (!(containingBurp = this.#rawBurps.find(b => (b.sourceStart <= startTruth) && (b.sourceEnd >= endTruth)))) {
+            } else {
+                this.#rawBubbles.push({
+                    sourceLineno: endSourceLine,
+                    rawMarkup: groups[0],
+                    slotAttr: groups[2],
+                    containingBurp
+                })
+            }
+        }
+    }
+    
+    breakBolusByRawBurpBlocks() {
+        if (this.#rawBurps.length === 0) {
+            return [ this.#bolus ]
+        }
+        let chunks = this.#bolus.shatterBySigil(this.burpBlockMarker)
+        return chunks
+    }
+
+    suckSlurps() {
+        const slurpPattern = /<!slurp [^>]*>/g
+
+        this.slurpMarker = 'slurp'+this.uname
+
+        const slurpDecls = this.#wholeFileLens.lensedCaptureAll(slurpPattern)
 
         for (let { startTruth, endTruth, endSourceLine, groups } of slurpDecls) {
-            this.#gazer.brandRange(this.slurpSigil, startTruth, endTruth)
-            this.wholeFileSlurpDecls.push({startTruth, endTruth})
+            this.#bolus.brandRange(this.slurpMarker, startTruth, endTruth)
             let chars = groups[0]
-
+            
+            // The `from` attribute is required...
             let match: RegExpMatchArray;
             if (!(match = chars.match(PukableSlotPocket.slurpDeclFromPattern))) {
                 const vmsg = `Missing 'from' attribute in slurp tag.`
                 pprintProblem(this.#ownLink.relpath, endSourceLine, vmsg, false)
                 this.#validations.push([endSourceLine, vmsg])
+                continue
             }
-            else {
-                let subLink = this.#ownLocator(match[1]);
-                if ("reason" in subLink) {
-                    const vmsg = `File '${match[1]}' not found: ${subLink.reason}`
-                    pprintProblem(this.#ownLink.relpath, endSourceLine, vmsg, true, this.#gazer.takeLines(endSourceLine, 3, 3))
-                    this.#validations.push([endSourceLine, 'File not found'])
-                }
 
-                let subPukable = new PukableSlotPocket(this.rootLoc, subLink, this.#includedFromChain.concat(this))
-
-                if (!(match = chars.match(PukableSlotPocket.slurpDeclAsPattern))) {
-                    const vmsg = `Missing 'as' attribute in slurp tag.`
-                    pprintProblem(this.#ownLink.relpath, endSourceLine, vmsg, false)
-                    this.#validations.push([endSourceLine, vmsg])
-                } else {
-                    let asName = match[1]
-
-                    if (asName.match(/[A-Z]/) || !asName.includes('-')) {
-                        const vmsg = `Lint: Custom tag names must be lowercase with 1+ hyphens: '${asName}'`
-                        pprintProblem(this.#ownLink.relpath, endSourceLine, vmsg, false)
-                        this.#validations.push([endSourceLine, vmsg])
-                    }
-
-                    this.#ownSlurpMap[asName] = {
-                        sourceLine: endSourceLine,
-                        pocket: subPukable
-                    }
-                }
+            // And needs to resolve to a valid HTML file.
+            let subHtml;
+            try {
+                subHtml = indeedHtml(this.#ownLocator(match[1]))
+            } catch(e) {
+                const vmsg = `Can't resolve '${match[1]}': ${e}`
+                pprintProblem(this.#ownLink.relpath, endSourceLine, vmsg, false, this.#bolus.takeLines(endSourceLine, 3, 3))
+                this.#validations.push([endSourceLine, 'File not found'])
+                continue
             }
+
+            // The `as` attribute is also required...
+            if (!(match = chars.match(PukableSlotPocket.slurpDeclAsPattern))) {
+                const vmsg = `Missing 'as' attribute in slurp tag.`
+                pprintProblem(this.#ownLink.relpath, endSourceLine, vmsg, false)
+                this.#validations.push([endSourceLine, vmsg])
+                continue
+            }
+
+            let asName = match[1]
+
+            // And ought to be usable as a custom tag name.
+            if (asName.match(/[A-Z]/) || !asName.includes('-')) {
+                const vmsg = `Lint: Custom tag names must be lowercase with 1+ hyphens: '${asName}'`
+                pprintProblem(this.#ownLink.relpath, endSourceLine, vmsg, false)
+                this.#validations.push([endSourceLine, vmsg])
+            }
+
+            this.#rawSlurps.push({
+                sourceLineno: endSourceLine,
+                from: subHtml,
+                as: asName
+            })
         }
+
+
         return
     }
 
-    pocketOwnSlots() {
+    sniffRawSlots() {
         const slotOpenPattern = /^<slot [^<>]*name=['"]([^'"]+)['"][^<>]*>/
         const slotClosePattern = /<\/slot[^<>]*>$/
+        const ownUname = PP.shortcode('-')
+        const thisSlotMarker = `rawSlot${this.uname}${ownUname}`
+
         let slots;
-        slots = this.#juiceLens.dichotomousJudgement(slotOpenPattern, slotClosePattern, 'slotPocket', true, 256, 256)
-        for (let { chars, endSourceLine } of slots) {
+        slots = this.#juiceLens.dichotomousJudgement({
+            entryPattern: slotOpenPattern, 
+            exitPattern: slotClosePattern, 
+            sigil: thisSlotMarker, 
+            lookaheadN: REASONABLE_TAG_LENGTH, 
+            lookbehindN: REASONABLE_TAG_LENGTH})
+
+        for (let { chars, startSourceLine, sourceStart, sourceEnd } of slots) {
             let match
             if ((match = chars.match(slotOpenPattern)) && (match?.[1]?.length > 0)) {
-                this.#ownSlotNames.push(match[1])
+                this.#rawSlots.push({
+                    slotName: match[1],
+                    ownUname: ownUname,
+                    rawMarkup: chars,
+                    sourceLineno: startSourceLine,
+                    sourceStart,
+                    sourceEnd
+                })
             } else {
-                pprintProblem(this.#ownLink.relpath, endSourceLine, `Missing 'name' attribute in slot tag.`, true)
+                pprintProblem(this.#ownLink.relpath, startSourceLine, `Missing 'name' attribute in slot tag.`, true)
             }
         }
+
     }
 
-    slurpStyles() {
-        const styleTags = this.#juiceLens.dichotomousJudgement('<style>', '</style>', 'styleTag')
+    gobbleRawStyles() {
+        this.styleBlockMarker = PP.shortcode('style')
+        const styleTags = this.#juiceLens.dichotomousJudgement({
+            entryPattern: /^<style(>| [^<>]*>)/, 
+            exitPattern: '</style>', 
+            lookaheadN: REASONABLE_TAG_LENGTH,
+            sigil: this.styleBlockMarker
+        }
+        )
         for (let { chars } of styleTags) {
-            this.#ownStyleContent.push(chars)
+            this.#styleContent.push(chars)
         }
+
     }
 
-    slurpSlotSlippers() {
-        for (let [tagName, { pocket, sourceLine }] of (Object.entries(this.#ownSlurpMap))) {
-            let { presence, entry, exit } = PukableSlotPocket.getNamedTagPatterns(tagName)
+    gobbleRawBurps() {
+        this.burpBlockMarker = 'rawBurp' + this.uname
+        
+        for (let slurpN of this.#rawSlurps) {
+            let { presence, entry, exit } = PukableSlotPocket.getBurpPatterns(slurpN.as)
+
             let match;
+            // Warn if there's a declared burp in a slurp that goes unused.
             if (!(match = this.#juiceLens.image.match(presence))) {
-                const vmsg = `Lint: Unused slurp <${tagName}>`
+                const vmsg = `Lint: Unused burp: <${slurpN.as}>`
 
-                pprintProblem(this.#ownLink.relpath, sourceLine, vmsg, false, this.#gazer.takeLines(sourceLine, 2, 2))
-                this.#validations.push([sourceLine, vmsg])
+                pprintProblem(this.#ownLink.relpath, 
+                    slurpN.sourceLineno, 
+                    vmsg, 
+                    false, 
+                    this.#bolus.takeLines(slurpN.sourceLineno, 2, 2)
+                )
+                this.#validations.push([slurpN.sourceLineno, vmsg])
+
                 continue
-            } else {
-                const usages = this.#juiceLens.dichotomousJudgement(entry, exit, tagName, true, 512, 512)
-
-                for (let { chars, endSourceLine } of usages) {
-                    this.#juiceLens.replaceBySigil(tagName, pocket.blowChunks(), [this.#juiceSigilName])
-                    const match = chars.matchAll(PukableSlotPocket.slotEnjoyerPattern) || []
-                    let foundSlots = []
-                    for (let m of match) {
-                        let [markup, tagName, slotName] = m
-                        foundSlots.push(slotName)
-                        this.#ownSlotSlippers.push({slotName, tagName, markup})
-                    }
-
-                    const needs = [...pocket.slots.values()]
-                    if (needs.some(n => !foundSlots.includes(n))) {
-                        const missing = needs.filter(n => !foundSlots.includes(n)).map(s => `"${s}"`).join(', ')
-                        const vmsg = `${tagName} has unfilled slots: ${missing}.`
-                        pprintProblem(this.#ownLink.relpath, endSourceLine, vmsg, false)
-                        this.#validations.push([endSourceLine, vmsg])
-                    }
-                }
             }
+            
+            // Burp tag is present in the juice lens image, so
+            // brand all usages of it with the burp block marker.
+            const slurpNburpBlocks = this.#juiceLens.dichotomousJudgement({
+                entryPattern: entry,
+                exitPattern: exit,
+                sigil: this.burpBlockMarker,
+                encompass: true,
+                lookaheadN: 512,
+                lookbehindN: 512
+            })
 
+            for (let { chars, startSourceOffset, endSourceOffset, startSourceLine } of slurpNburpBlocks) {
+                let openTag = chars.match(entry)[0]
+                let closeTag = chars.match(exit)[0]
+                let id = openTag.match(/id=["']([^'"]+)["']/)
+                let idAttr = id?.[1] || ''
+                let tagName = slurpN.as
+
+                this.#rawBurps.push({ 
+                    sym: Symbol(`${tagName}${ idAttr ? '#'+idAttr : '' }`),
+                    sourceStart: startSourceOffset,
+                    sourceEnd: endSourceOffset,
+                    sourceLineno: startSourceLine,
+                    rawInnerMarkup: chars.replace(openTag, '').replace(closeTag, ''),
+                    rawOpenTag: openTag,
+                    rawCloseTag: closeTag,
+                    tagName,
+                    idAttr
+                })
+            }
         }
+        
+        // Burp blocks will be shunned after their bubbles are gobbled.
 
         return
     }
 
-    get slots() {
-        let own = []
-        for (let subSlot of Object.values(this.#ownSlurpMap).flatMap(psp => psp.pocket.slots)) {
-            if (own.includes(subSlot)) {
-                this.#validations.push([1, `Slot name collision: ${subSlot}`])
-            } else {
-                own.push(subSlot)
+    slurpSubPockets() {
+        for(let s of this.#rawSlurps) {
+            let subPocket = new PukableSlotPocket(
+                this.rootLoc, 
+                s.from, 
+                [...this.#includedFromChain, this])
+
+            this.#slurpedSubPockets.push({
+                ...s,
+                pocket: subPocket               
+            })
+
+            let subpocketSlots = subPocket.deepGetRawSlots()
+            for (let susl of subpocketSlots) {
+                if (this.#rawBubbles.every(rs => rs.slotAttr !== susl.slotName)) {
+                    const vmsg = `unfilled slots: ${susl.slotName}.`
+                    pprintProblem(this.#ownLink.relpath, susl.sourceLineno, vmsg, false)
+                    this.#validations.push([susl.sourceLineno, vmsg])
+                }
+            }
+        }
+    }
+    
+    digestBubbles() {
+        if (this.#pukableBubbles.length) { return this.#pukableBubbles }
+        for (let rb of this.#rawBurps) {
+            let burpBubbles = this.#rawBubbles.filter(bub => bub.containingBurp === rb)
+            for (let bb of burpBubbles) {
+                let digestedSlotAttr = bb.slotAttr
+                let digestedMarkup = bb.rawMarkup
+                if (rb.idAttr) {
+                    digestedSlotAttr = rb.idAttr + '-' + bb.slotAttr
+                    digestedMarkup = digestedMarkup.replace(/slot=["']([^'"]+)["']/, `slot="${digestedSlotAttr}"`)
+                }
+                this.#pukableBubbles.push({ ...bb, uniquingBy: rb.idAttr, digestedMarkup })
             }
         }
 
-        return own
-    }
-
-    get slotSlippers() {
-        return [...this.#ownSlotSlippers, ...Object.values(this.#ownSlurpMap).flatMap(psp => psp.pocket.slotSlippers)]
-    }
-
-    get styleContent() {
-        return [...this.#ownStyleContent, ...Object.values(this.#ownSlurpMap).flatMap(psp => psp.pocket.styleContent)]
-    }
-
-    get slurps() {
-        return Object.values(this.#ownSlurpMap).map(psp => psp.pocket.ownFilename)
-    }
-
-    blowChunks() {
-        return this.#juiceLens.image
+        return this.#pukableBubbles
     }
     
-    *debugRepr(depth=0) {
+    #curriedRegurgitator(rb: RawBurp<RawSlurp>): ChunkFlavorTransformation {
+        if (!rb.idAttr) {
+            return (halfBlownChunk: string) => halfBlownChunk
+        } else {
+            const slotnamePattern = new RegExp(/(<slot\s[^<>]*name=['"]?)([^'"]+)['"]?/g)
+            const prefix = rb.idAttr
+
+            return (halfBlownChunk: string) => {
+                let bits = halfBlownChunk.split('')
+                let matches = [...halfBlownChunk.matchAll(slotnamePattern)].reverse()
+                for (let m of matches) {
+                    bits.splice(m.index + m[1].length, 0, prefix + '-')
+                }
+
+                return bits.join('')
+            }
+        }
+    }
+    
+    digestBurp(rb: RawBurp<RawSlurp>): PukableBurp<PukableSlurp> {
+        let juiceProvider = this.#slurpedSubPockets.find(ssp => ssp.as === rb.tagName)
+        if (!juiceProvider) {
+            throw new ReferenceError(`${rb.tagName} wanted, ${this.#slurpedSubPockets.map(s => s.as)} available`)
+        }
+
+        let digestedOpenTag = rb.rawOpenTag.replace(`<${rb.tagName}`, '<div')
+        let digestedCloseTag = rb.rawCloseTag.replace(`${rb.tagName}`, 'div')
+
+        let digestedInnerResidue = rb.rawInnerMarkup.replaceAll(/<.*>[^<>]*<.*>/g, '')
+        if (digestedInnerResidue.replaceAll(/\s/g, '').length) {
+            const vmsg = `Burp contains some unslotted residue.`
+
+            pprintProblem(this.#ownLink.relpath, 
+                rb.sourceLineno, 
+                vmsg, 
+                false, 
+                this.#bolus.takeLines(rb.sourceLineno, 0, 4)
+            )
+            this.#validations.push([rb.sourceLineno, vmsg])
+        }
+        
+        let chunkFlavorTransformation = this.#curriedRegurgitator(rb)
+
+        return { 
+            ...rb, 
+            digestedOpenTag, 
+            digestedCloseTag, 
+            digestedInnerResidue, 
+            juiceProvider,
+            chunkFlavorTransformation
+        }
+        
+        
+    }
+
+    deepGetRawSlots(): RawSlot[] {
+        return [...this.#rawSlots, ...Object.values(this.#slurpedSubPockets).flatMap(s => s.pocket.deepGetRawSlots())]
+    }
+
+    deepGetPukableBubbles(): PukableBubble<RawBurp<RawSlurp>, RawSlurp>[] {
+
+        this.digestBubbles()
+
+        return [...this.#pukableBubbles, ...Object.values(this.#slurpedSubPockets).flatMap(s => s.pocket.deepGetPukableBubbles())]
+    }
+
+    #debugLetters = ("ABCDEFGHIJKLMNOPQRSTUVWXYZあいうえおかきくけこさしすせそたちつてとなにぬねのはひふへほまみむめもやゆよらりるれろわをん".split(''));
+
+    // Chunks are ready to blow when all burp blocks are barfable and the bolus can be broken.
+    *blowChunks(regurgitate: ChunkFlavorTransformation = (s) => s) {
+        this.#juiceLens.refocus({ creed: { [this.slurpMarker]: 'shun' } })
+        this.#juiceLens.refocus({ creed: { [this.styleBlockMarker]: 'shun' } })
+        this.#juiceLens.refocus({ creed: { [this.burpBlockMarker]: 'shun'} })
+        
+        let chunks = this.breakBolusByRawBurpBlocks()
+
+        // Styles and bubbles are going to go before and after the PSP content, respectively,
+        // so we don't need to worry about them.
+        // 
+        // We do need to output, in order:
+        // The chunk up to Burp A
+        // Burp A, digested (1) <tag-name> -> <div> (2) all slots digested: slot name="X" becomes slot name="X+idAttr")
+ 
+        for (let i = 0; i < chunks.length; i++) {
+            yield regurgitate(chunks[i].getLens(this.juiceLensName).image)
+            if (this.#rawBurps[i]) {
+                let burp = this.digestBurp(this.#rawBurps[i])
+                yield burp.digestedOpenTag
+                yield* burp.juiceProvider.pocket.blowChunks(burp.chunkFlavorTransformation)
+                if (burp.digestedInnerResidue) {
+                    yield burp.digestedInnerResidue
+                }
+                yield burp.digestedCloseTag
+            }
+        }
+
+        // let pukables = [...this.#slurpedSubPockets.map(ssp => ssp.pocket)]
+
+        // for (let i = 0; i < chunks.length; i++) {
+        //     yield chunks[i].getLens(this.juiceLensName).image
+        //     yield 
+        // }
+    }
+
+    *debugRepr(depth=0, bubblesFromAbove: RawBubble[]=[], burpLetters={ring: this.#debugLetters}) {
         let ind = PP.spaces(depth * 2)
-        let arrow = ''
-        yield ind + arrow + PP.styles.pink + this.reprName + PP.styles.none
+        yield ind + PP.styles.pink + this.reprName + PP.styles.none
 
-        for (let sl of this.#ownSlotSlippers) {
-            yield ind + `${PP.spaces(arrow.length)}|- # (${sl.slotName}) => <${sl.tagName}>`
+        let _p = PP.styles.pink
+        let _u = PP.styles.purple
+        let _g = PP.styles.green
+        let _y = PP.styles.yellow
+        let _ø = PP.styles.none
+        
+        const burpStylin = (s) => `<${_u + s + _ø}>`;
+        const slotStylin = (s) => `[${_y + s + _ø}]`;
+
+        for (let b of this.#rawBurps) {
+            let l_t = burpLetters.ring.shift()
+
+            burpLetters[b.sym] = l_t
+
+            let leadup = ind + `|- ${l_t}:${b.sourceLineno} `
+
+            yield _p + leadup + _ø + burpStylin(b.sym.description)
+
+            burpLetters.ring.push(l_t)
+
+            let burpBubbles = this.#rawBubbles.filter(bb => bb.containingBurp.sym == b.sym)
+
+            for (let bs of burpBubbles) {
+                let sp = PP.spaces(leadup.length)
+                let stick = '|-' + _ø
+                let valPeek = bs.rawMarkup.match(/>(.*)</)[1].slice(0, 20) + '...'
+                yield `${_p}|${sp}${stick}${slotStylin(bs.slotAttr)}: ${valPeek}`
+
+            }
+        }
+        
+        for (let sl of this.#rawSlots) {
+            let bubbed = bubblesFromAbove
+                .filter(bb => bb.slotAttr == sl.slotName)
+                .map(bb => burpStylin(burpLetters[bb.containingBurp.sym]))
+                .join('-')
+            yield ind + `${_p}|-${_ø} * ${slotStylin(sl.slotName)}` + (bubbed.length ? '<-' + bubbed : '')
         }
 
-        for (let [name, val] of Object.entries(this.#ownSlurpMap)) {
-            yield ind + PP.styles.pink + PP.spaces(arrow.length) + '|-- ' + `<${name}> (<!slurp @ line ${val.sourceLine}>)` + PP.styles.none
-            yield* val.pocket.debugRepr(depth+2)
-        }
-
-
-        for (let sn of this.#ownSlotNames) {
-            yield ind + `${PP.spaces(arrow.length)} |- * [ ${sn} ]`
+        for (let { as, pocket } of this.#slurpedSubPockets) {
+            let { sourceLineno } = this.#rawSlurps.find(rs => rs.as == as)
+            let stick = `${_p}|--${_ø}`
+            yield ind + `${stick} <!${_g}slurp @ ln ${sourceLineno}${_ø}>`
+            for (let ln of pocket.debugRepr(depth+2, [...bubblesFromAbove, ...this.#rawBubbles], burpLetters)) {
+                yield _p + '|' + _ø + ln
+            }
         }
 
         for (let [ln, msg] of this.#validations) {
             let exclamation = PP.styles.some('yellow', 'inverse') + ' ! ' + PP.styles.none
-            yield PP.spaces(2 + (depth * 2)) + '|--' + exclamation + `->  ${PP.styles.yellow}${msg} @ line ${ln}\n`
+            let lineinfo =  ln !== null? `@ line ${ln}` : ''
+            let stick = _p + '|--' + _ø
+            yield ind + stick + exclamation + `->  ${PP.styles.yellow}${msg}${lineinfo}\n`
         }
-
+        yield ind + _p + '|' + PP.spaces(20 - ind.length-depth, '_') + `.${this.uname}` + _ø
 
     }
 }

@@ -113,8 +113,6 @@ export class PukableSlotPocket {
     static slurpDeclFromPattern = /^<!slurp\s[^<>]*from=['"]?([^'"]+)['"]?[^<>]*>/
     static slurpDeclAsPattern = /^<!slurp\s[^<>]*as=['"]?([^'"]+)['"]?[^<>]*>/
 
-    static voidBubblePattern = /<(area|base|br|col|command|embed|hr|img|input|keygen|link|meta|param|source|track|wbr)\s[^<>]*slot=['"]?([^<>"]+)['"]?[^<>]*>/g // sosumi
-    static bubblePattern = /<([a-zA-Z0-9\-]+)\s[^<>]*slot=["']?([^<>"]+)['"]?[^<>]*>[^<]*<\/\1>/g
 
     static getBurpPatterns = (name) => ({
         presence: new RegExp(`<${name}(?:\\s*>|\\s[^<>]*>).*</${name}\\s*>`, 's'),
@@ -213,60 +211,8 @@ export class PukableSlotPocket {
         }
     }
 
-    /**
-     * Considerations with styles:
-     * 1) They'll be concatenated to a single <style> tag. Since they get added
-     *      to the set from the oustide in and top down, this equates to
-     *      flattening the puke tree depth-first. The same-specificity rule will
-     *      apply accordingly in the final document.
-     *
-     * 2) The return type of deepGetStyleContent is a set, so only one of each
-     *      unique style contents will be in the final document.
-     * 
-     * @param styleset 
-     * @returns 
-     */
-    deepGetStyleContent(styleset: StyleChunks = { hostInnerStyles: new Set(), hostOuterStyles: new Set() }): StyleChunks {
-        this.#styleContent.hostOuterStyles.forEach(sc => styleset.hostOuterStyles.add(sc))
-        this.#styleContent.hostInnerStyles.forEach(sc => styleset.hostInnerStyles.add(sc))
-
-        for (let { pocket } of this.#slurpedSubPockets) {
-            let { hostOuterStyles, hostInnerStyles } = pocket.deepGetStyleContent(styleset)
-            hostOuterStyles.forEach(sc => styleset.hostOuterStyles.add(sc))
-            hostInnerStyles.forEach(sc => styleset.hostInnerStyles.add(sc))
-        }
-
-        return styleset
-    }
-
     get ownFilename() {
         return this.#ownLink.relpath
-    }
-
-    suckRawBubbles() {
-        const voidBubbles = this.#juiceLens.lensedCaptureAll(PukableSlotPocket.voidBubblePattern)
-        const bubbles = this.#juiceLens.lensedCaptureAll(PukableSlotPocket.bubblePattern)
-
-        for (let { startTruth, endTruth, endSourceLine, groups } of [...voidBubbles, ...bubbles]) {
-            let containingBurp
-            if (!(containingBurp = this.#rawBurps.find(b => (b.sourceStart <= startTruth) && (b.sourceEnd >= endTruth)))) {
-            } else {
-                this.#rawBubbles.push({
-                    sourceLineno: endSourceLine,
-                    rawMarkup: groups[0],
-                    slotAttr: groups[2],
-                    containingBurp
-                })
-            }
-        }
-    }
-
-    breakBolusByRawBurpBlocks() {
-        if (this.#rawBurps.length === 0) {
-            return [this.#bolus]
-        }
-        let chunks = this.#bolus.shatterBySigil(this.burpBlockMarker)
-        return chunks
     }
 
     suckSlurps() {
@@ -361,79 +307,6 @@ export class PukableSlotPocket {
 
     }
 
-    gulpAndDigestStyles() {
-        this.styleBlockMarker = PP.shortcode('style')
-        const outerRulePattern = /^\s+((html|head|body)({|[ .[:+~|>#][^{]*){[^}]+})/gm
-        const univRulePattern = /^\s+(\*({|[ .[:+~|>#][^{]*){[^}]+})/gm
-        let elementSelectorPattern = (
-            (burpTagName: string) =>
-                new RegExp(`([ >+~&])(${burpTagName})`, 'g')
-        );
-
-        const styleTags = this.#juiceLens.dichotomousJudgement({
-            entryPattern: /^<style(>| [^<>]*>)/,
-            exitPattern: '</style>',
-            lookaheadN: REASONABLE_TAG_LENGTH,
-            sigil: this.styleBlockMarker
-        })
-
-        for (let { chars } of styleTags) {
-            let styleInnerContent = chars
-                .replace(/^<style(>| [^<>]*>)/, '')
-                .replace('</style>', '')
-
-            let styleInnerRules = styleInnerContent.split('')
-
-            let outerRules = styleInnerContent.matchAll(outerRulePattern)
-            for (let oru of [...outerRules].reverse()) {
-                styleInnerRules.splice(oru.index, oru[0].length);
-                let ruleToAdd = oru[0];
-                burpTagSwap: for (let pb of this.#pukableBurps) {
-                    let pat = elementSelectorPattern(pb.tagName), m
-                    if (m = ruleToAdd.match(pat)) {
-                        ruleToAdd.replace(pb.tagName, `.${pb.className}`)
-                        break burpTagSwap
-                    }
-                }
-                this.#styleContent.hostOuterStyles.add(ruleToAdd)
-            }
-
-            styleInnerContent = styleInnerRules.join('')
-
-            // Universal rules will be duplicated inside and outside the host
-            let univRules = styleInnerContent.matchAll(univRulePattern)
-            for (let uru of [...univRules].reverse()) {
-                let ruleToAdd = uru[0]
-                burpTagSwap: for (let pb of this.#pukableBurps) {
-                    let pat = elementSelectorPattern(pb.tagName), m
-                    if (m = ruleToAdd.match(pat)) {
-                        ruleToAdd.replace(pb.tagName, `.${pb.className}`)
-                        break burpTagSwap
-                    }
-                }
-                this.#styleContent.hostOuterStyles.add(ruleToAdd)
-            }
-
-
-            // Finally, swap the inner rules (which share space together
-            // in the remainder of the original string) with the same
-            // burp tag name approach.
-            for (let pb of this.#pukableBurps) {
-                let pat = elementSelectorPattern(pb.tagName)
-                let matches = styleInnerContent.matchAll(pat)
-                for (let m of [...matches].reverse()) {
-                    styleInnerContent = [
-                        styleInnerContent.slice(0, m.index + m[1].length),
-                        `.${pb.className}`,
-                        styleInnerContent.slice(m.index + m[0].length)
-                    ].join('')
-                }
-            }
-
-            this.#styleContent.hostInnerStyles.add(styleInnerContent)
-        }
-    }
-
     gobbleRawBurps() {
         this.burpBlockMarker = 'rawBurp' + this.uname
 
@@ -494,6 +367,51 @@ export class PukableSlotPocket {
         return
     }
 
+    suckRawBubbles() {
+        const voidBubblePattern = /<(area|base|br|col|command|embed|hr|img|input|keygen|link|meta|param|source|track|wbr)\s[^<>]*slot=['"]?([^<>"]+)['"]?[^<>]*>/g // sosumi
+        const bubbleEnterPattern = /<([a-zA-Z0-9\-]+)\s[^<>]*slot=["']?([^<>"]+)['"]?[^<>]*>/g
+
+        const voidBubbles = this.#juiceLens.lensedCaptureAll(voidBubblePattern)
+        const bubbleOpenings = this.#juiceLens.lensedCaptureAll(bubbleEnterPattern)
+
+        for (let { startTruth, endTruth, endSourceLine, groups } of [...voidBubbles]) {
+            let containingBurp
+            if (!(containingBurp = this.#rawBurps.find(b => (b.sourceStart <= startTruth) && (b.sourceEnd >= endTruth)))) {
+            } else {
+                this.#rawBubbles.push({
+                    sourceLineno: endSourceLine,
+                    rawMarkup: groups[0],
+                    slotAttr: groups[2],
+                    containingBurp
+                })
+            }
+        }
+
+        for (let { startTruth, endTruth, groups } of [...bubbleOpenings]) {
+            let containingBurp
+            if (!(containingBurp = this.#rawBurps.find(b => (b.sourceStart <= startTruth) && (b.sourceEnd >= endTruth)))) {
+            } else {
+                const bubbleOpeningTag = groups[0]
+                const bubbleTagName = groups[1]
+                const bubbleClosingTagPattern = new RegExp(`</${bubbleTagName}\\s*>$`)
+
+                const [{ startSourceLine, chars }] = this.#juiceLens.dichotomousJudgement({
+                    entryPattern: bubbleOpeningTag,
+                    exitPattern: bubbleClosingTagPattern,
+                    lookbehindN: REASONABLE_TAG_LENGTH
+                })
+
+                this.#rawBubbles.push({
+                    sourceLineno: startSourceLine,
+                    rawMarkup: chars,
+                    slotAttr: groups[2],
+                    containingBurp
+                })
+            }
+        }
+    }
+
+
     slurpSubPockets() {
         for (let s of this.#rawSlurps) {
             let subPocket = new PukableSlotPocket(
@@ -515,24 +433,6 @@ export class PukableSlotPocket {
                 }
             }
         }
-    }
-
-    digestBubbles() {
-        if (this.#pukableBubbles.length) { return this.#pukableBubbles }
-        for (let rb of this.#rawBurps) {
-            let burpBubbles = this.#rawBubbles.filter(bub => bub.containingBurp === rb)
-            for (let bb of burpBubbles) {
-                let digestedSlotAttr = bb.slotAttr
-                let digestedMarkup = bb.rawMarkup
-                if (rb.idAttr) {
-                    digestedSlotAttr = rb.idAttr + '-' + bb.slotAttr
-                    digestedMarkup = digestedMarkup.replace(/slot=["']([^'"]+)["']/, `slot="${digestedSlotAttr}"`)
-                }
-                this.#pukableBubbles.push({ ...bb, uniquingBy: rb.idAttr, digestedMarkup })
-            }
-        }
-
-        return this.#pukableBubbles
     }
 
     digestRawBurps() {
@@ -618,6 +518,105 @@ export class PukableSlotPocket {
         }
     }
 
+    gulpAndDigestStyles() {
+        this.styleBlockMarker = PP.shortcode('style')
+        const outerRulePattern = /^\s+((html|head|body)({|[ .[:+~|>#][^{]*){[^}]+})/gm
+        const univRulePattern = /^\s+(\*({|[ .[:+~|>#][^{]*){[^}]+})/gm
+        let elementSelectorPattern = (
+            (burpTagName: string) =>
+                new RegExp(`([ >+~&])(${burpTagName})`, 'g')
+        );
+
+        const styleTags = this.#juiceLens.dichotomousJudgement({
+            entryPattern: /^<style(>| [^<>]*>)/,
+            exitPattern: '</style>',
+            lookaheadN: REASONABLE_TAG_LENGTH,
+            sigil: this.styleBlockMarker
+        })
+
+        for (let { chars } of styleTags) {
+            let styleInnerContent = chars
+                .replace(/^<style(>| [^<>]*>)/, '')
+                .replace('</style>', '')
+
+            let styleInnerRules = styleInnerContent.split('')
+
+            let outerRules = styleInnerContent.matchAll(outerRulePattern)
+            for (let oru of [...outerRules].reverse()) {
+                styleInnerRules.splice(oru.index, oru[0].length);
+                let ruleToAdd = oru[0];
+                burpTagSwap: for (let pb of this.#pukableBurps) {
+                    let pat = elementSelectorPattern(pb.tagName), m
+                    if (m = ruleToAdd.match(pat)) {
+                        ruleToAdd.replace(pb.tagName, `.${pb.className}`)
+                        break burpTagSwap
+                    }
+                }
+                this.#styleContent.hostOuterStyles.add(ruleToAdd)
+            }
+
+            styleInnerContent = styleInnerRules.join('')
+
+            // Universal rules will be duplicated inside and outside the host
+            let univRules = styleInnerContent.matchAll(univRulePattern)
+            for (let uru of [...univRules].reverse()) {
+                let ruleToAdd = uru[0]
+                burpTagSwap: for (let pb of this.#pukableBurps) {
+                    let pat = elementSelectorPattern(pb.tagName), m
+                    if (m = ruleToAdd.match(pat)) {
+                        ruleToAdd.replace(pb.tagName, `.${pb.className}`)
+                        break burpTagSwap
+                    }
+                }
+                this.#styleContent.hostOuterStyles.add(ruleToAdd)
+            }
+
+
+            // Finally, swap the inner rules (which share space together
+            // in the remainder of the original string) with the same
+            // burp tag name approach.
+            for (let pb of this.#pukableBurps) {
+                let pat = elementSelectorPattern(pb.tagName)
+                let matches = styleInnerContent.matchAll(pat)
+                for (let m of [...matches].reverse()) {
+                    styleInnerContent = [
+                        styleInnerContent.slice(0, m.index + m[1].length),
+                        `.${pb.className}`,
+                        styleInnerContent.slice(m.index + m[0].length)
+                    ].join('')
+                }
+            }
+
+            this.#styleContent.hostInnerStyles.add(styleInnerContent)
+        }
+    }
+
+    /**
+     * Considerations with styles:
+     * 1) They'll be concatenated to a single <style> tag. Since they get added
+     *      to the set from the oustide in and top down, this equates to
+     *      flattening the puke tree depth-first. The same-specificity rule will
+     *      apply accordingly in the final document.
+     *
+     * 2) The return type of deepGetStyleContent is a set, so only one of each
+     *      unique style contents will be in the final document.
+     * 
+     * @param styleset 
+     * @returns 
+     */
+    deepGetStyleContent(styleset: StyleChunks = { hostInnerStyles: new Set(), hostOuterStyles: new Set() }): StyleChunks {
+        this.#styleContent.hostOuterStyles.forEach(sc => styleset.hostOuterStyles.add(sc))
+        this.#styleContent.hostInnerStyles.forEach(sc => styleset.hostInnerStyles.add(sc))
+
+        for (let { pocket } of this.#slurpedSubPockets) {
+            let { hostOuterStyles, hostInnerStyles } = pocket.deepGetStyleContent(styleset)
+            hostOuterStyles.forEach(sc => styleset.hostOuterStyles.add(sc))
+            hostInnerStyles.forEach(sc => styleset.hostInnerStyles.add(sc))
+        }
+
+        return styleset
+    }
+
     deepGetAssocFilenames() {
         return [
             this.#ownLink.relpath,
@@ -635,6 +634,35 @@ export class PukableSlotPocket {
 
         return [...this.#pukableBubbles, ...Object.values(this.#slurpedSubPockets).flatMap(s => s.pocket.deepGetPukableBubbles())]
     }
+
+    digestBubbles() {
+        if (this.#pukableBubbles.length) { return this.#pukableBubbles }
+
+        for (let rb of this.#rawBurps) {
+            let burpBubbles = this.#rawBubbles.filter(bub => bub.containingBurp === rb)
+            for (let bb of burpBubbles) {
+                let digestedSlotAttr = bb.slotAttr
+                let digestedMarkup = bb.rawMarkup
+                if (rb.idAttr) {
+                    digestedSlotAttr = rb.idAttr + '-' + bb.slotAttr
+                    digestedMarkup = digestedMarkup.replace(/slot=["']([^'"]+)["']/, `slot="${digestedSlotAttr}"`)
+                }
+                this.#pukableBubbles.push({ ...bb, uniquingBy: rb.idAttr, digestedMarkup })
+            }
+        }
+
+        return this.#pukableBubbles
+    }
+
+
+    breakBolusByRawBurpBlocks() {
+        if (this.#rawBurps.length === 0) {
+            return [this.#bolus]
+        }
+        let chunks = this.#bolus.shatterBySigil(this.burpBlockMarker)
+        return chunks
+    }
+
 
     #debugLetters = ("ABCDEFGHIJKLMNOPQRSTUVWXYZあいうえおかきくけこさしすせそたちつてとなにぬねのはひふへほまみむめもやゆよらりるれろわをん".split(''));
 

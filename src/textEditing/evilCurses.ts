@@ -26,7 +26,7 @@ export type CursedRangedOpRes = {
     endSourceOffset: number
 }
 
-type DJOpts = {
+export type DJOpts = {
     entryPattern: string | RegExp,
     exitPattern: string | RegExp,
     sigil?: string,

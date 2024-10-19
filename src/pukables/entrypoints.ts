@@ -139,7 +139,6 @@ export class PukableEntrypoint {
         debugger;
 
         yield preBodyContent
-        yield this.reloaderScript
         yield this.hostOpen
         yield this.templateOpen
         yield innerStyleTag
@@ -147,6 +146,7 @@ export class PukableEntrypoint {
         yield this.templateClose
         yield this.#bodyBarfer.deepGetPukableBubbles().map(x => x.digestedMarkup).join('\n')
         yield this.hostClose
+        yield this.reloaderScript
         yield postBody
     }
 

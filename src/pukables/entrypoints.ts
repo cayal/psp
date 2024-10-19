@@ -1,6 +1,6 @@
 import { PukableSlotPocket as PukableSlotPocket } from './slotPockets';
 import { FSPeep } from '../paths/filePeeping';
-import { LinkPeeps, LinkPeepLocator, PLink, indeedHtml, PLinkLocable, Queried, HconLensMap } from '../paths/linkPeeping.js';
+import { LinkPeeps, LinkPeepLocus, PLink, indeedHtml, PLinkLocus, Queried, HconLensMap } from '../paths/linkPeeping.js';
 import { PP } from '../fmt/ppstuff.js';
 import { CursedDataGazer } from '../textEditing/evilCurses';
 import { L } from '../fmt/logging';
@@ -41,12 +41,12 @@ export class PukableEntrypoint {
 
     static slurpDeclExitPattern = /<!slurp\s[^<>]*>$/
 
-    constructor(rootLoc: PLinkLocable, relpath: string, hostTagName = "psp", reloaderScript = '') {
+    constructor(rootLocus: PLinkLocus, relpath: string, hostTagName = "psp", reloaderScript = '') {
         if (!relpath) {
             throw new TypeError('Missing relpath.')
         }
 
-        let ownLink = indeedHtml(rootLoc(relpath)('.'))
+        let ownLink = indeedHtml(rootLocus(relpath)('.'))
 
         this.id = Symbol(PP.shortcode(`@${ownLink.relpath}${ownLink.fragment || ''}|`))
         L.log(PP.styles.yellow + `\n<| Building entrypoint: ${this.id.description}...` + PP.styles.none)
@@ -56,14 +56,14 @@ export class PukableEntrypoint {
         }
 
         this.ownLink = ownLink
-        let markupData = ownLink.result.getData()
+        let markupData = ownLink.result
         if (!markupData.hasBody) {
             throw new TypeError(`${ownLink.relpath} must have a body in order to be used as an entrypoint.`)
         }
 
         this.#gazer = markupData.gazer
         this.#bodyPartLensMap = markupData.lensNames
-        this.#bodyBarfer = new PukableSlotPocket(rootLoc, relpath)
+        this.#bodyBarfer = new PukableSlotPocket(rootLocus, relpath)
         this.reloaderScript = reloaderScript
         this.hostOpen = `\n<${hostTagName}-host>\n`
         this.templateOpen = `\n<template shadowrootmode="open">\n`
@@ -168,6 +168,6 @@ if (import.meta.vitest) {
     test("There's no time left. We must barely test this at all.", () => {
         const fst = FSPeep({ entrypoint: 'testdata/pwl' })
         const links = LinkPeeps({ entrypoint: fst })
-        pel = new PukableEntrypoint(LinkPeepLocator(links), 'testdata/pwl')
+        pel = new PukableEntrypoint(LinkPeepLocus(links), 'testdata/pwl')
     })
 }

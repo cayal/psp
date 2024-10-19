@@ -111,7 +111,7 @@ export class CursedDataGazer {
      * @param sigils Additional sigils to add
      * @returns The updated memory.
      */
-    intrudeAt(start = 0, intrusion: string, sigils: string[]) {
+    intrudeAt(start = 0, intrusion: string, sigils: string[] = []) {
         this.#memory = ShatOps.intrude(this.#memory, start, intrusion, sigils)
         this.#invalidateLenses()
         return this.#memory
@@ -229,8 +229,8 @@ export class CursedDataGazer {
         return sent
     }
 
-    takeLines(...args) {
-        return ShatOps.takeLines(this.#memory, ...args)
+    takeLines(atLine, contextBefore, contextAfter) {
+        return ShatOps.takeLines(this.#memory, atLine, contextBefore, contextAfter)
     }
 
     replaceBySigil(replacingSigilName, content, addSigils) {
@@ -289,12 +289,7 @@ export class CursedDataGazer {
         if (!sigil) { throw new TypeError('sigil required') }
         if (typeof offset !== 'number') { throw new TypeError(`offset required (got: ${offset})`) }
 
-        let b
-        if (unbrand) {
-            b = this.#memory.unsetSigilAt(offset, sigil)
-        } else {
-            b = this.#memory.setSigilAt(offset, sigil)
-        }
+        let b = this.#memory.setSigilAt(offset, sigil, unbrand)
 
         this.#invalidateLenses()
         return b
@@ -424,7 +419,7 @@ export class CursedDataGazer {
             return new CursedDataGazer.Cloc(this.#tome, lensOpts).image
         }
 
-        replaceBySigil(replacingSigilName, content, addSigils) {
+        replaceBySigil(replacingSigilName, content, addSigils: string[] = []) {
             return this.#tome.replaceBySigil(replacingSigilName, content, addSigils)
         }
 
@@ -477,7 +472,7 @@ export class CursedDataGazer {
             return retVal.reduce(rangedOpReducer, {})
         }
 
-        lensedIntrude(offset, content, sigils) {
+        lensedIntrude(offset, content, sigils: string[] = []) {
             const { truth } = this.point(offset)
             this.#tome.intrudeAt(truth, content, sigils)
             return truth
@@ -771,7 +766,7 @@ export type ShatteredMemory = {
     sigils: (start?: number, end?: number) => string[][],
     getVoiceAt: (i: number) => string,
     setVoiceAt: (i: number, char: string) => void,
-    setSigilAt: (i: number, sigil: string) => SetSigilRes,
+    setSigilAt: (i: number, sigil: string, unset?: boolean) => SetSigilRes,
     getSigilsAt: (i: number) => string[],
     sliceShard: (start: number, end: number) => ShatteredMemory,
     setSigilByPosition: (i: number, sp: number, unset?: boolean) => SetSigilRes,
@@ -855,10 +850,10 @@ export function ShatteredMemory({ content, sigils = Sigils(), confabulated }: Sh
         _dv.setUint32(i * BYTES_PER_V, _enc.encode(char) as unknown as number)
     }
 
-    function _setSi(i, sigil) {
+    function _setSi(i, sigil, unset = false) {
         _nooob(i)
         let sp = sigils.define(sigil)
-        return _setSiBP(i, sp)
+        return _setSiBP(i, sp, unset)
     }
 
     function _setSiBP(i: number, sp: number, unset = false): SetSigilRes {
@@ -1071,7 +1066,7 @@ export const ShatOps = {
 
         while (content.length > 0) {
             let localOffset = yield
-            let line1 = []
+            let line1: string = ''
 
             if (localOffset === 0) {
                 line1 += (ownColor + arrowThroughHead + PP.styles.none)
@@ -1087,7 +1082,7 @@ export const ShatOps = {
                 if (sigils.length > 1) {
                     line1 += PP.styles.black
                 } else {
-                    line1 += brandColors?.[c.brands?.[0]] ?? ''
+                    line1 += brandColors?.[sigils?.[0]] ?? ''
                 }
                 line1 += (PP.oneChar(c, cWidth))
                 charsOut += 1
@@ -1113,7 +1108,9 @@ export const ShatOps = {
 }
 
 
+// @ts-ignore
 if (import.meta.vitest) {
+    // @ts-ignore
     const { test, expect } = import.meta.vitest
 
     test('sigils do their thing', () => {

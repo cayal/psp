@@ -1,8 +1,8 @@
 import { decodeFrames, pongFrame, prepareFrame, WSChangeset } from './src/websockets/websocketFraming';
-import { LinkPeeps, LinkPeepLocator } from './src/paths/linkPeeping';
+import { LinkPeeps, LinkPeepLocus, PLink } from './src/paths/linkPeeping';
 import { PukableEntrypoint } from './src/pukables/entrypoints';
 import { MessageChannel } from 'node:worker_threads'
-import { FSPeepRoot } from './src/paths/filePeeping'
+import { FSPeep, FSPeepRoot } from './src/paths/filePeeping'
 import { createSecureServer } from 'node:http2'
 import { PP } from './src/fmt/ppstuff.js';
 import { readFileSync } from 'node:fs';
@@ -14,7 +14,7 @@ import { Socket } from 'node:net';
 L.log(`Hi (${process.pid})\n`)
 
 const WEBROOT = 'web'
-const RELOADER_SCRIPT = '\n<script>\n' +  readFileSync('./src/websockets/websocketReloading.js', 'utf-8') + '\n</script>\n'
+const RELOADER_SCRIPT = '\n<script>\n' + readFileSync('./src/websockets/websocketReloading.js', 'utf-8') + '\n</script>\n'
 let cannotPuke = false
 
 const { port1: changeReceiver, port2: changeTransmitter } = new MessageChannel()
@@ -32,15 +32,25 @@ obs.observe({ type: 'measure' });
 
 performance.mark('a')
 
-const webrootDir = FSPeepRoot({ entrypoint: WEBROOT })
-const indexFSPeeps = webrootDir.peepReduce(((acc, peep) => peep.path.base == 'index.html' ? acc.concat(peep) : acc), [])
-webrootDir.getWatcher(changeTransmitter)
+let rebuildLinkLocator = () => {
+    // Start by scanning the folder again and building a link tree.
+    let webrootEntry = FSPeepRoot({ entrypoint: WEBROOT })
+    let pLinks = LinkPeeps({ entrypoint: webrootEntry })
+
+    // Connect `change` messages from the new FSPeep to the message port.
+    webrootEntry.connectWatcher(changeTransmitter)
+
+    let locus = LinkPeepLocus(pLinks)
+    return { locus, webrootEntry, pLinks }
+}
+
+let { locus, webrootEntry, pLinks } = rebuildLinkLocator()
 
 performance.mark('b')
 performance.measure('Built file watch tree', 'a', 'b')
 
-L.log(`Serving from: ${webrootDir.relpath}\n`)
-for (let l of webrootDir.repr()) {
+L.log(`Serving from: ${webrootEntry.relpath}\n`)
+for (let l of webrootEntry.repr()) {
     L.log(l)
 }
 
@@ -51,30 +61,44 @@ const server = createSecureServer({
     cert: readFileSync('localhost.pem'),
 })
 
+let buildTask = build(webrootEntry);
 
-L.log(PP.styles.pink + `\n> Using ${PP.ar(indexFSPeeps.map((i: any) => i.relpath))} as entrypoints. \n` + PP.styles.none)
+async function build(root: FSPeep, relpathToBuild?: string): Promise<PukableEntrypoint[]> {
 
-const build = async (pLinks: LinkPeeps, relpathToBuild?: string) => {
     relpathsToPukers = {}
-    const loc = LinkPeepLocator(pLinks)
 
-    const buildSet = relpathToBuild ? [pLinks.links.find(l => l.relpath === relpathToBuild)] : indexFSPeeps
+    let llll = rebuildLinkLocator()
+    locus = llll.locus
+    webrootEntry = llll.webrootEntry
+    pLinks = llll.pLinks
+
+    const buildSet: PLink[] = relpathToBuild
+        ? [pLinks.links.find(x =>
+            x.relpath === relpathToBuild)]
+        : pLinks.links.filter(x =>
+            x.ogPeep.path.name === 'index'
+            && x.type == 'html')
+
     if (!buildSet) {
         console.error('Nothing to build.')
         cannotPuke = true;
-        return
+        return []
     }
+
+    L.log(PP.styles.pink + `\n> Building ${PP.ar(buildSet.map((i: any) => i.relpath))}. \n` + PP.styles.none)
 
     let entrypointsBuilt = []
     try {
 
         performance.mark('a')
         for (let iPeep of buildSet) {
-            const entrypoint = new PukableEntrypoint(loc, iPeep.relpath, undefined, RELOADER_SCRIPT)
+            const entrypoint = new PukableEntrypoint(
+                locus, iPeep.relpath, undefined, RELOADER_SCRIPT)
+
             webpathsToPukers[entrypoint.ownLink.webpath] = entrypoint
 
             for (let assoc of entrypoint.getAssociatedFilenames()) {
-                if (!relpathsToPukers[assoc]) { relpathsToPukers[assoc] = []}
+                if (!relpathsToPukers[assoc]) { relpathsToPukers[assoc] = [] }
                 relpathsToPukers[assoc].push(entrypoint)
             }
 
@@ -88,28 +112,31 @@ const build = async (pLinks: LinkPeeps, relpathToBuild?: string) => {
         console.error("Ran into a problem building files.")
         cannotPuke = true
     }
-    return {
-        pLinks: pLinks,
-        entrypointsBuilt: entrypointsBuilt
-    }
+    return entrypointsBuilt
 }
 
-let buildTask = build(LinkPeeps({ entrypoint: webrootDir }))
-
 let enqueueReplRepr = null;
+
 changeReceiver.addEventListener("message", (ev: MessageEvent) => {
 
     let [mode, relpath] = ev.data.split(" ")
     if (mode == "change") {
-        buildTask = build(LinkPeeps({entrypoint: webrootDir}), relpath)
-        enqueueReplRepr = relpath
-        changeTransmitter.postMessage(`built ${relpath}`)
+        buildTask = build(webrootEntry, relpath)
+
+        buildTask.then(builtEntrypoints => {
+            enqueueReplRepr = builtEntrypoints
+            changeTransmitter.postMessage(`built ${relpath}`)
+        })
+
     } else if (mode == 'built' && (relpath === enqueueReplRepr)) {
-        let builtPoint = relpathsToPukers[relpath][0]
-        for (let devInfo of builtPoint.debugRepr()) {
+        let builtPoints = relpathsToPukers[relpath]
+
+        for (let devInfo of builtPoints.map(x => x.debugRepr())) {
             L.log(devInfo)
         }
+
         enqueueReplRepr = null
+
     }
 })
 
@@ -123,42 +150,59 @@ server.on('stream', async (stream, headers) => {
         stream.end()
     }
 
-    // Refresh LinkPeeps, since files might have been created/deleted.
-    const pLinks = LinkPeeps({ entrypoint: webrootDir })
+    await buildTask
 
     const path = headers[':path'] || '/'
 
-    let fileMatch
+    let fileMatch: PLink
     let chunkProvider: PukableEntrypoint
+
     if (chunkProvider = webpathsToPukers[path]) {
         stream.respond({
             'content-type': 'text/html; charset=utf-8',
             ':status': 200,
         });
 
-        await buildTask
-
-        let entrypoint  = webpathsToPukers[chunkProvider.ownLink.webpath]
+        let entrypoint = webpathsToPukers[chunkProvider.ownLink.webpath]
 
         for (let v of entrypoint.blowChunks()) {
             if (!v) {
                 console.warn('Warning: undefined value in stream')
                 continue
             }
+
             stream.write(v)
+
         }
+
         stream.end()
         return
 
     }
-    else if (fileMatch = pLinks[path]) {
+    else if (fileMatch = pLinks.links.find(pl => pl.webpath == path)) {
+        let res = locus(WEBROOT)(path)
+        if (res.type !== 'file' || res.result.type !== 'okFile') {
+            stream.respond({
+                'content-type': 'text/html; charset=utf-8',
+                ':status': 404,
+            });
+            stream.write('404 Not Found')
+            stream.end()
+            return
+        }
+
+        let charset = res.result.contentType === 'text/html' ? ';charset=text/utf-8' : ''
+
         stream.respond({
-            'content-type': 'text/html; charset=utf-8',
+            'content-type': `${res.result.contentType}${charset}`,
             ':status': 200,
         });
-        stream.write("TODO not implemented")
+
+        stream.write(res.result.data)
+        console.log("sent somes setuff")
         stream.end()
         return
+
     }
     else {
         stream.respond({
@@ -168,8 +212,8 @@ server.on('stream', async (stream, headers) => {
         stream.write('404 Not Found')
         stream.end()
         return
-    }
 
+    }
 
 })
 
@@ -194,14 +238,14 @@ function headerExtract(lines) {
 const changeset = WSChangeset(changeReceiver)
 const Enc = new TextEncoder()
 
-const websocket = createServer({ 
-    keepAlive: true, 
-    keepAliveInitialDelay: 1000, 
-}, async (socket: Socket & {id?: number}) => {
+const websocket = createServer({
+    keepAlive: true,
+    keepAliveInitialDelay: 1000,
+}, async (socket: Socket & { id?: number }) => {
     let accept;
 
     changeset.addSocket(socket, relpathsToPukers)
-    
+
     socket.addListener("error", (e) => {
         changeReceiver.removeListener("message", changeset.listeners[socket.id].cb)
         console.log('------------')
@@ -242,45 +286,46 @@ const websocket = createServer({
             } else {
                 console.warn(`${socket.id} | Got a bag of data.`)
                 console.warn(res.data)
+
             }
         }
         else {
             const lines = data.toString().split('\r\n')
             const hval = headerExtract(lines)
-                if (lines?.[0].endsWith('HTTP/1.1')) {
-                    if (!(hval(/^Upgrade: /) === 'websocket')) {
-                        socket.write(Enc.encode([
-                            'HTTP/1.1 426 Upgrade Required',
-                            'Upgrade: websocket',
-                            'Connection: Upgrade',
-                            '',
-                            ''
-                        ].join('\r\n')))
-                        return
-                    }
-
-                    const swk = hval(/^Sec-WebSocket-Key: /)
-                    const magic = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
-                    const inKey = swk + magic
-                    accept = await crypto.subtle.digest('sha-1', Enc.encode(inKey))
-                    const b64accept = btoa(String.fromCharCode(...new Uint8Array(accept)))
-
-                    const rb = Enc.encode([
-                        'HTTP/1.1 101 Switching Protocols',
+            if (lines?.[0].endsWith('HTTP/1.1')) {
+                if (!(hval(/^Upgrade: /) === 'websocket')) {
+                    socket.write(Enc.encode([
+                        'HTTP/1.1 426 Upgrade Required',
                         'Upgrade: websocket',
                         'Connection: Upgrade',
-                        `Sec-WebSocket-Accept: ${b64accept}`,
                         '',
                         ''
-                    ].join('\r\n'))
-
-                    socket.write(rb)
-                    socket.write(prepareFrame(`hi ${socket.id}`))
-                    L.log(`(Sock#${socket.id}) Updater connected. Starting pings. \n`)
-                    changeset.startPings(socket.id)
+                    ].join('\r\n')))
                     return
                 }
+
+                const swk = hval(/^Sec-WebSocket-Key: /)
+                const magic = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+                const inKey = swk + magic
+                accept = await crypto.subtle.digest('sha-1', Enc.encode(inKey))
+                const b64accept = btoa(String.fromCharCode(...new Uint8Array(accept)))
+
+                const rb = Enc.encode([
+                    'HTTP/1.1 101 Switching Protocols',
+                    'Upgrade: websocket',
+                    'Connection: Upgrade',
+                    `Sec-WebSocket-Accept: ${b64accept}`,
+                    '',
+                    ''
+                ].join('\r\n'))
+
+                socket.write(rb)
+                socket.write(prepareFrame(`hi ${socket.id}`))
+                L.log(`(Sock#${socket.id}) Updater connected. Starting pings. \n`)
+                changeset.startPings(socket.id)
+                return
             }
+        }
     })
 })
 

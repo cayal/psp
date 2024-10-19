@@ -1,8 +1,9 @@
-import { existsSync, readdirSync, readFileSync, Stats, statSync, watch, WatchListener } from "fs"
+import { existsSync, FSWatcher, readdirSync, readFileSync, Stats, statSync, watch, WatchListener } from "fs"
 import { resolve, parse, join, ParsedPath } from "path"
 import { MessagePort } from "worker_threads"
 import { PP } from "../fmt/ppstuff"
 import { L } from "../fmt/logging"
+import { isAscii, isUtf8 } from "buffer"
 
 export type FSPeep = FSPbv & (Dimp | Fimp)
 
@@ -25,16 +26,16 @@ type Wimp = {
 
 type Dimp = Wimp & {
     imp: 'd',
-    contents: string[],
+    contents: { contentType: 'dirent', data: string[] },
     getDescendants: () => FSPeep[],
     fileApply: <T>(f: FApC<T>, ...rest: unknown[]) => T[],
-    getWatcher: <T>(_: MessagePort) => WatchListener<T> | null,
+    connectWatcher: (port: MessagePort) => FSWatcher
     getWatchSet: (_: MessagePort) => Set<unknown>
 }
 
 type Fimp = Wimp & {
     imp: 'f',
-    contents: string,
+    contents: ContentCouplet,
     fileApply: <T>(f: FApC<T>, ...rest: unknown[]) => T,
 }
 
@@ -42,6 +43,16 @@ type FSPeepOpts = {
     entrypoint: string,
     from?: FSPbv & Dimp,
 }
+
+export type ContentCouplet =
+    | {
+        contentType: 'text/html',
+        data: string
+    }
+    | {
+        contentType: 'image/png',
+        data: Buffer
+    }
 
 export function FSPeepRoot(o: FSPeepOpts): FSPeep & Dimp {
     const peepent = FSPeep(o)
@@ -79,7 +90,10 @@ function Dimp(basis: FSPbv, changeTransmitter?: MessagePort): FSPbv & Dimp {
     if (!basis.stat.isDirectory()) { throw new TypeError(`${basis.relpath} is not a directory.`) }
     if (basis.parent && !basis.parent.stat.isDirectory()) { throw new TypeError(`${basis.relpath} cannot be owned by file ${basis.parent.relpath}.`) }
 
-    const contents = readdirSync(basis.relpath);
+    const _contents = {
+        contentType: 'dirent' as const,
+        data: readdirSync(basis.relpath)
+    }
 
     const dimp: FSPbv & Dimp = {
         imp: 'd',
@@ -88,22 +102,22 @@ function Dimp(basis: FSPbv, changeTransmitter?: MessagePort): FSPbv & Dimp {
         parent: basis.parent,
         path: basis.path,
         stat: basis.stat,
-        repr: reprd,
-        contents: contents,
-        peepReduce: peepReduced,
-        fileApply: fileApplyd,
-        getRelative: getRelatived,
-        getDescendants: getDescendantsd,
-        getWatcher: getWatcherd,
-        getWatchSet: getWatchSetd
+        repr: _reprd,
+        contents: _contents,
+        peepReduce: _peepReduced,
+        fileApply: _fileApplyd,
+        getRelative: _getRelatived,
+        getDescendants: _getDescendantsd,
+        connectWatcher: _connectWatcherToPort,
+        getWatchSet: _getWatchSetd
     }
 
-    function getDescendantsd() {
-        let x = dimp.contents.map(subEntry => FSPeep({ entrypoint: subEntry, from: dimp }))
+    function _getDescendantsd() {
+        let x = dimp.contents.data.map(subEntry => FSPeep({ entrypoint: subEntry, from: dimp }))
         return x
     }
 
-    function* reprd(depth = 0) {
+    function* _reprd(depth = 0) {
         const y = PP.styles.yellow
         const ø = PP.styles.none
         if (depth === 0) {
@@ -120,7 +134,7 @@ function Dimp(basis: FSPbv, changeTransmitter?: MessagePort): FSPbv & Dimp {
         }
     }
 
-    function peepReduced(f: PReC, initial: any): any {
+    function _peepReduced(f: PReC, initial: any): any {
         let acc = initial;
 
         for (let chilln of dimp.getDescendants()) {
@@ -131,12 +145,12 @@ function Dimp(basis: FSPbv, changeTransmitter?: MessagePort): FSPbv & Dimp {
         return oval
     }
 
-    function fileApplyd<T>(f: FApC<T>, ...rest: unknown[]): T[] {
+    function _fileApplyd<T>(f: FApC<T>, ...rest: unknown[]): T[] {
         const des = dimp.getDescendants()
         return des.flatMap(ch => ch.fileApply(f, ...rest))
     }
 
-    function getRelatived(relpath: string) {
+    function _getRelatived(relpath: string) {
         const dbgInfo = `[FileTree '${dimp.relpath}'].getFile('${relpath}')`
 
         if (!relpath) {
@@ -183,40 +197,40 @@ function Dimp(basis: FSPbv, changeTransmitter?: MessagePort): FSPbv & Dimp {
         return match.getRelative(subpath)
     }
 
-    let watcher;
-    let lastTransmit = performance.now();
+    let _watcher: FSWatcher;
+    let _lastTransmit = performance.now();
 
-    function getWatcherd(changeTransmitter?: MessagePort) {
-        if (!changeTransmitter) {
-            throw new ReferenceError("Can't watch files without changeTransmitter.")
+    function _connectWatcherToPort(port: MessagePort) {
+        if (!port) {
+            throw new ReferenceError("Port required to receive change messages.")
         }
 
-        if (watcher) { return watcher }
-        let ws = getWatchSetd(changeTransmitter)
+        if (_watcher) { return _watcher }
+        let ws = _getWatchSetd(port)
         for (let subw of ws) {
             if (subw.recurse) {
-                subw.recurse(changeTransmitter)
+                subw.recurse(port)
             }
         }
 
-        if (changeTransmitter) {
-            watcher = watch(dimp.path.base, { persistent: false, recursive: false }, (x, filename) => {
+        if (port) {
+            _watcher = watch(dimp.path.base, { persistent: false, recursive: false }, (x, filename) => {
                 let changePath = join(dimp.relpath, filename ?? '')
                 L.log(`${dimp.relpath}: ${changePath} changed on disk. \n`)
-                if (performance.now() - lastTransmit > 100) {
+                if (performance.now() - _lastTransmit > 100) {
                     L.log(`${dimp.relpath}: Posting 'change ${changePath}'. \n`)
-                    lastTransmit = performance.now()
-                    changeTransmitter.postMessage(`change ${changePath}`)
+                    _lastTransmit = performance.now()
+                    port.postMessage(`change ${changePath}`)
                 }
             })
         }
     }
 
-    function getWatchSetd(ct: MessagePort) {
+    function _getWatchSetd(ct: MessagePort) {
         type Q = { key: string, recurse: ((_: MessagePort) => void) | false }
         let x: Q[] = dimp.fileApply(fst => ({
             key: fst.path.base,
-            recurse: fst.imp == 'd' ? fst.getWatcher : false
+            recurse: fst.imp == 'd' ? fst.connectWatcher : false
         }))
         return new Set<Q>(x)
     }
@@ -229,7 +243,16 @@ function Fimp(basis: FSPbv): FSPbv & Fimp {
     if (basis.parent && !basis.parent.stat.isDirectory()) {
         throw new TypeError(`${basis.relpath} cannot be owned by file ${basis.parent.path.base}.`)
     }
-    const contents = readFileSync(basis.relpath, 'utf-8');
+
+    let contentType, data;
+    const cbuf = readFileSync(basis.relpath);
+    if (isUtf8(cbuf) || isAscii(cbuf)) {
+        contentType = 'text/html'
+        data = new TextDecoder('utf-8').decode(cbuf)
+    } else {
+        contentType = 'image/png'
+        data = cbuf
+    }
 
     const fimp: FSPbv & Fimp = {
         imp: 'f',
@@ -239,7 +262,7 @@ function Fimp(basis: FSPbv): FSPbv & Fimp {
         path: basis.path,
         stat: basis.stat,
         repr: reprf,
-        contents: contents,
+        contents: { contentType, data },
         peepReduce: peepReduceF,
         fileApply: fileApplyf,
         getRelative: getRelativef,

@@ -1,4 +1,4 @@
-import { PLink, LinkPeeps, LinkPeepLocator, LinkLocator, indeedHtml, PLinkLocable, Queried } from "../paths/linkPeeping"
+import { PLink, LinkPeeps, LinkPeepLocus, PLinkLocator, indeedHtml, PLinkLocus, Queried } from "../paths/linkPeeping"
 import { CursedDataGazer, CursedLens } from "../textEditing/evilCurses"
 import { PP, pprintProblem } from "../fmt/ppstuff.js"
 import { FSPeep } from "../paths/filePeeping"
@@ -89,7 +89,7 @@ export class PukableSlotPocket {
 
     #juiceLens: CursedLens
     #wholeFileLens: CursedLens
-    #ownLocator: LinkLocator
+    #ownLocator: PLinkLocator
     #ownLink: PLink & Queried & { type: 'html' }
     #includedFromChain
 
@@ -120,7 +120,7 @@ export class PukableSlotPocket {
         exit: new RegExp(`</${name}\\s*>$`),
     })
 
-    constructor(rootLoc: PLinkLocable, targetPath: string | (PLink & Queried), includedFromChain = []) {
+    constructor(rootLoc: PLinkLocus, targetPath: string | (PLink & Queried), includedFromChain = []) {
 
         this.rootLoc = rootLoc
         this.#ownLocator = typeof targetPath == 'string'
@@ -152,7 +152,7 @@ export class PukableSlotPocket {
             throw new ReferenceError(`${this.#ownLink.relpath} did not resolve to an HTML file.`)
         }
 
-        const markupData = this.#ownLink.result.getData()
+        const markupData = this.#ownLink.result
         this.#bolus = markupData.gazer
 
         if (this.#ownLink.fragment) {
@@ -771,7 +771,7 @@ if (import.meta.vitest) {
     let psp1;
 
     test('Can construct PSP', () => {
-        let link1 = LinkPeepLocator(links)
+        let link1 = LinkPeepLocus(links)
         expect("reason" in link1).toBe(false)
         psp1 = new PukableSlotPocket(link1, 'testdata/psp')
     })

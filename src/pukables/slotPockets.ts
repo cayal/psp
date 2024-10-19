@@ -1,8 +1,7 @@
-import { FSPeep } from "../paths/filePeeping"
-import { PP, pprintProblem } from "../fmt/ppstuff.js"
-import { PLink, LinkPeeps, LinkPeepLocator, PeepedLinkResolution, QF, LinkLocator, indeedHtml, PLinkLocable, Queried } from "../paths/linkPeeping"
+import { PLink, LinkPeeps, LinkPeepLocator, LinkLocator, indeedHtml, PLinkLocable, Queried } from "../paths/linkPeeping"
 import { CursedDataGazer, CursedLens } from "../textEditing/evilCurses"
-import * as assert from "node:assert"
+import { PP, pprintProblem } from "../fmt/ppstuff.js"
+import { FSPeep } from "../paths/filePeeping"
 import { L } from "../fmt/logging"
 
 const REASONABLE_TAG_LENGTH=256
@@ -121,10 +120,12 @@ export class PukableSlotPocket {
         exit: new RegExp(`</${name}\\s*>$`),
     })
 
-    constructor(rootLoc: PLinkLocable, targetPath: string | Queried, includedFromChain = []) {
+    constructor(rootLoc: PLinkLocable, targetPath: string | (PLink & Queried), includedFromChain = []) {
 
         this.rootLoc = rootLoc
-        this.#ownLocator = typeof targetPath == 'string' ? rootLoc(targetPath) : rootLoc(targetPath.relpath)
+        this.#ownLocator = typeof targetPath == 'string' 
+            ? rootLoc(targetPath) : 
+            rootLoc(targetPath.relpath)
 
         this.#ownLink = typeof targetPath == 'string' 
             ? indeedHtml(this.#ownLocator('.'))

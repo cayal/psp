@@ -2,7 +2,6 @@ import { L } from "../fmt/logging"
 import { PP } from "../fmt/ppstuff"
 import { ModalCharGaze } from "../textEditing/charGazer"
 import { assert } from "console"
-import { format } from "util"
 
 const sliceStyleCoord = (i: number, l: number) => i < 0 ? Math.max(0, l + i) : Math.min(l, 0 + i)
 

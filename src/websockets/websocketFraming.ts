@@ -1,7 +1,7 @@
-import { Socket } from "net"
+import { PukableEntrypoint } from "../pukables/entrypoints"
 import { MessagePort } from "worker_threads"
-import { PukableEntrypoint } from "./src/pukables/entrypoints"
 import { L } from "../fmt/logging"
+import { Socket } from "net"
 
 const DEBUG_TIMEOUTS = false
 const DEBUG_CONNECTIONS = false

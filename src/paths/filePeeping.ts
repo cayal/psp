@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, readFileSync, Stats, statSync, watch, WatchListener } from "fs"
 import { resolve, parse, join, ParsedPath } from "path"
-import { PP } from "../fmt/ppstuff"
 import { MessagePort } from "worker_threads"
+import { PP } from "../fmt/ppstuff"
 import { L } from "../fmt/logging"
 
 export type FSPeep = FSPbv & (Dimp | Fimp)

@@ -1,10 +1,10 @@
-import { existsSync, link, readFileSync, statSync } from "fs";
 import { CursedDataGazer as CursedDataGazer, ShatteredMemory } from "../textEditing/evilCurses";
-import { FSPeep } from "./filePeeping";
 import { PP, pprintProblem } from "../fmt/ppstuff.js";
 import { join, relative, resolve } from "path";
 import { isAscii, isUtf8 } from "buffer";
+import { FSPeep } from "./filePeeping";
 import { L } from "../fmt/logging";
+import { existsSync } from "fs";
 
 
 export type QF = {

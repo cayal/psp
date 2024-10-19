@@ -1,6 +1,6 @@
 <!doctype html>
 <!slurp from="./smoke.html" as="smoke-test">
-<!slurp from="./bar.html" as="foo-bar">
+<!slurp from="./bar.html" as="bar-card">
 <html lang="en">
   <head>
     <title>Example | Pukable Slot Pockets</title>
@@ -26,8 +26,14 @@
       }
       
       .card-wrap {
-          grid-template-columns: 2;
-          grid-template-rows: 1;
+        display: grid;
+        grid-template-columns: 50% 50%;
+        outline: 1px solid red;
+      }
+      
+      bar-card {
+          border: 1px solid blue;
+          min-height: 100%;
       }
     </style>
     <smoke-test>
@@ -36,14 +42,16 @@
     <section class="example-wrap">
        <h2>Edit this page to see changes</h2>
        <p>PSP is an experiment in open shadow roots.</p>
-       <foo-bar>
-         <span slot="card-title">Important sentences</span>
-         <span slot="card-description">Bonjour, le monde</span>
-       </foo-bar>
-       <foo-bar id="cowboy">
-         <span slot="card-title">There aint no room in town for two of us</span>
-         <span slot="card-description">Well shit fella maybe there is</span>
-       </foo-bar>
+       <section class="card-wrap">
+           <bar-card class="blue">
+             <span slot="title">Important sentences</span>
+             <span slot="description">Bonjour, le monde</span>
+           </bar-card>
+           <bar-card id="cowboy">
+             <span slot="title">There aint no room in town for two of us</span>
+             <span slot="description">Well shit fella maybe there is</span>
+           </bar-card>
+       </section>
     </section>
   </body>
 </html>

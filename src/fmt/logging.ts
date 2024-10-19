@@ -9,19 +9,19 @@ export const L = (() => {
             }
         }
     }
-    
+
     let writer = write()
     writer.next()
     writer.next('Logger initialized.\n')
 
     return {
-        log: async (...a) => { 
-            const s = a.map(format)
+        log: async (...a) => {
+            const s = a.map(aa => typeof aa !== 'string' ? format(aa) : a)
             writer.next(s.join('\t'))
         },
 
-        error: async (...a) => { 
-            const s = a.map(format)
+        error: async (...a) => {
+            const s = a.map(aa => typeof aa !== 'string' ? format(aa) : a)
             writer.next('\x1b[31m' + s.join('\t') + '\x1b[0m')
         }
     }

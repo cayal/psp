@@ -10,8 +10,6 @@
       body {
           display: grid;
           font-family: system-ui, sans-serif;
-          grid-template-columns: 1;
-          grid-template-rows: 1;
           height: 100vh;
           align-items: center;
           margin: 0;
@@ -26,12 +24,17 @@
         border-radius: 2px;
         padding: .2em 2em  1em 2em;
       }
+      
+      .card-wrap {
+          grid-template-columns: 2;
+          grid-template-rows: 1;
+      }
     </style>
     <smoke-test>
       <span slot="heading">It</span>
     </smoke-test>
     <section class="example-wrap">
-       <h2>Welcome to Pukable Slot Pockets</h2>
+       <h2>Edit this page to see changes</h2>
        <p>PSP is an experiment in open shadow roots.</p>
        <foo-bar>
          <span slot="card-title">Important sentences</span>

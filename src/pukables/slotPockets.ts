@@ -466,6 +466,7 @@ export class PukableSlotPocket {
                 lookaheadN: 512,
                 lookbehindN: 512
             })
+            debugger;
 
             for (let { chars, startSourceOffset, endSourceOffset, startSourceLine } of slurpNburpBlocks) {
                 let openTag = chars.match(entry)[0]

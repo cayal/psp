@@ -69,7 +69,7 @@ export class PukableEntrypoint {
         this.templateOpen = `\n<template shadowrootmode="open">\n`
         this.templateClose = `\n</template>\n`
         this.hostClose = `</${hostTagName}-host>\n`
-        
+
         // #bodyBarfer brands its '<!slurp>' declarations (even outside the juice)
         // with its slurpSigil. PSPs will only blow chunks from the juice, while a 
         // PEP, when blowing chunks before and after the juice,  should still shun 
@@ -83,8 +83,8 @@ export class PukableEntrypoint {
             })
 
         this.#gazer.getLens(this.#bodyPartLensMap.preBody)
-            .refocus({creed: {[this.#bodyBarfer.slurpMarker]: 'shun' }})
-            
+            .refocus({ creed: { [this.#bodyBarfer.slurpMarker]: 'shun' } })
+
         this.#gazer.getLens(this.#bodyPartLensMap.postBody)
             .dichotomousJudgement({
                 entryPattern: '<!slurp',
@@ -94,8 +94,8 @@ export class PukableEntrypoint {
             })
 
         this.#gazer.getLens(this.#bodyPartLensMap.postBody)
-            .refocus({creed: {[this.#bodyBarfer.slurpMarker]: 'shun' }})
-        
+            .refocus({ creed: { [this.#bodyBarfer.slurpMarker]: 'shun' } })
+
         L.log('\n')
 
     }
@@ -103,7 +103,7 @@ export class PukableEntrypoint {
     getAssociatedFilenames() {
         return [this.ownLink.relpath, ...this.#bodyBarfer.deepGetAssocFilenames()]
     }
-    
+
     regurgitatePrebody() {
         let preBodyContent = this.#gazer.getLens(this.#bodyPartLensMap.preBody).image ?? ''
         const { hostOuterStyles, hostInnerStyles } = this.#bodyBarfer.deepGetStyleContent()
@@ -111,12 +111,12 @@ export class PukableEntrypoint {
             <style>
             ${[...hostInnerStyles.values()].join('\n')}
             </style>
-            ` 
+            `
         let outerStyleTag = `
             <style>
             ${[...hostOuterStyles.values()].join('\n')}
             </style>
-            ` 
+            `
         if (preBodyContent.includes('</head>')) {
             let i = preBodyContent.indexOf('</head>');
 
@@ -136,6 +136,7 @@ export class PukableEntrypoint {
     *blowChunks() {
         const { preBodyContent, innerStyleTag } = this.regurgitatePrebody()
         const postBody = this.#gazer.getLens(this.#bodyPartLensMap.postBody).image ?? ''
+        debugger;
 
         yield preBodyContent
         yield this.reloaderScript
@@ -148,9 +149,9 @@ export class PukableEntrypoint {
         yield this.hostClose
         yield postBody
     }
-    
+
     *debugRepr() {
-        yield PP.styles.some('blue') + '/ (' +  this.id.description + ')' + PP.styles.none + '\n'
+        yield PP.styles.some('blue') + '/ (' + this.id.description + ')' + PP.styles.none + '\n'
         for (let line of this.#bodyBarfer.debugRepr(1)) {
             yield* PP.styles.blue + '\n| ' + PP.styles.none + line
         }

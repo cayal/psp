@@ -27,13 +27,12 @@
       
       .card-wrap {
         display: grid;
-        grid-template-columns: 50% 50%;
-        outline: 1px solid red;
+        grid-template-columns: calc(50% - 1em) calc(50% - 1em);
+        column-gap: 2em;
       }
       
       bar-card {
-          border: 1px solid blue;
-          min-height: 100%;
+          min-height: 200px;
       }
     </style>
     <smoke-test>
@@ -44,7 +43,7 @@
        <p>PSP is an experiment in open shadow roots.</p>
        <section class="card-wrap">
            <bar-card class="blue">
-             <span slot="title">Important sentences</span>
+             <span slot="title">This is one instance of a card</span>
              <span slot="description">Bonjour, le monde</span>
            </bar-card>
            <bar-card id="cowboy">

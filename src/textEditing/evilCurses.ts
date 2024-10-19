@@ -20,8 +20,8 @@ export type LensOptions = {
 
 export type CursedRangedOpRes = {
     chars: string,
-    startSourceLine:number,
-    startSourceOffset:number,
+    startSourceLine: number,
+    startSourceOffset: number,
     endSourceLine: number,
     endSourceOffset: number
 }
@@ -37,47 +37,47 @@ type DJOpts = {
 
 export type CLOCPointer = { voice: string, sigils: string[], truth: number, linenoTruth: number }
 export interface CursedLens {
-        image: string,
-        lensOpts: string,
-        invalidatePointers: () => void,
-        refocus: (newOpts: Partial<LensOptions>) => void,
-        retome: (newTome: CursedDataGazer) => void,
-        point: (offset: number) => CLOCPointer,
-        shine: (startOffset?: number) => Generator<CLOCPointer>
-        selectOnce: (lensOpts: LensOptions) => string,
-        replaceBySigil: (replacingSigilName: string, content: string, addSigils: string[]) => string[],
-        lensedCapture: (pattern: RegExp, o?: number) => { 
-            index: number, 
-            startTruth: number, 
-            endTruth: number, 
-            endSourceLine: number, 
-            groups: string[]
-        },
-        lensedCaptureAll: (pattern: RegExp, o?: number) => { 
-            index: number, 
-            startTruth: number, 
-            endTruth: number, 
-            endSourceLine: number, 
-            groups: string[]
-        }[],
-        lensedDestroy: (offset, count) => CursedRangedOpRes
-        lensedIntrude: (offset: number, content: string, sigils: string[]) => number
-        lensedLiftRanges(...cutPointOffsets: [number, number][]): CursedDataGazer[]
+    image: string,
+    lensOpts: string,
+    invalidatePointers: () => void,
+    refocus: (newOpts: Partial<LensOptions>) => void,
+    retome: (newTome: CursedDataGazer) => void,
+    point: (offset: number) => CLOCPointer,
+    shine: (startOffset?: number) => Generator<CLOCPointer>
+    selectOnce: (lensOpts: LensOptions) => string,
+    replaceBySigil: (replacingSigilName: string, content: string, addSigils: string[]) => string[],
+    lensedCapture: (pattern: RegExp, o?: number) => {
+        index: number,
+        startTruth: number,
+        endTruth: number,
+        endSourceLine: number,
+        groups: string[]
+    },
+    lensedCaptureAll: (pattern: RegExp, o?: number) => {
+        index: number,
+        startTruth: number,
+        endTruth: number,
+        endSourceLine: number,
+        groups: string[]
+    }[],
+    lensedDestroy: (offset, count) => CursedRangedOpRes
+    lensedIntrude: (offset: number, content: string, sigils: string[]) => number
+    lensedLiftRanges(...cutPointOffsets: [number, number][]): CursedDataGazer[]
 
-        dichotomousJudgement: (opts: DJOpts) => CursedRangedOpRes[]
-        stashCreed: (sigil: string) => void
-        popCreed: () => void
-        lensedBrandRange: (sigil: string, 
-            encompass: boolean, 
-            start: number, 
-            end: number, 
-            unbrand: boolean) => CursedRangedOpRes[]
+    dichotomousJudgement: (opts: DJOpts) => CursedRangedOpRes[]
+    stashCreed: (sigil: string) => void
+    popCreed: () => void
+    lensedBrandRange: (sigil: string,
+        encompass: boolean,
+        start: number,
+        end: number,
+        unbrand: boolean) => CursedRangedOpRes[]
 
-        takeSourceLines: (sourceLineNumber: number, 
-            contextBefore?: number, 
-            contextAfter?: number) => Lines 
+    takeSourceLines: (sourceLineNumber: number,
+        contextBefore?: number,
+        contextAfter?: number) => Lines
 
-        summonBugs: (...debugStuff: any) => any
+    summonBugs: (...debugStuff: any) => any
 }
 
 export class CursedDataGazer {
@@ -85,12 +85,12 @@ export class CursedDataGazer {
 
     #memory: ShatteredMemory
 
-    #lenses: {[lensName: string]: CursedLens} = {}
+    #lenses: { [lensName: string]: CursedLens } = {}
 
-    constructor(memory: ShatteredMemory, lenses?: {[lensName: string]: CursedLens}) {
+    constructor(memory: ShatteredMemory, lenses?: { [lensName: string]: CursedLens }) {
         this.#memory = memory
         this.id = Symbol(PP.shortcode('anth'))
-        if (lenses) { 
+        if (lenses) {
             for (let [k, l] of Object.entries(lenses)) {
                 this.lens(l.lensOpts, k)
             }
@@ -250,7 +250,7 @@ export class CursedDataGazer {
         this.#invalidateLenses()
         return destroyed
     }
-    
+
     shatterBySigil(removingSigilName: string): CursedDataGazer[] {
         let ranges = ShatOps.selectBySigil(this.#memory, removingSigilName)
         let cuts = []
@@ -260,7 +260,7 @@ export class CursedDataGazer {
             cuts.push([highlightStart, highlightEnd])
             highlightStart = end
         }
-        
+
         let shards = []
         let last = 0
         for (let [start, end] of cuts) {
@@ -387,7 +387,7 @@ export class CursedDataGazer {
 
             return this
         }
-        
+
         retome(newTome: CursedDataGazer) {
             this.#tome = newTome
             this.invalidatePointers()
@@ -503,10 +503,10 @@ export class CursedDataGazer {
             entryPattern,
             exitPattern,
             sigil,
-            encompass=true,
+            encompass = true,
             lookaheadN,
             lookbehindN
-        }:DJOpts) {
+        }: DJOpts) {
             const ranges = ModalCharGaze(this.image, entryPattern, exitPattern, lookaheadN, lookbehindN)
 
             let retVal = [];
@@ -533,7 +533,7 @@ export class CursedDataGazer {
                 }
             }
 
-            return retVal
+            return retVal.toReversed()
         }
 
         #stashedCreed
@@ -586,13 +586,13 @@ export class CursedDataGazer {
         }
 
         summonBugs({
-            colors=true,
-            title = '', 
-            depth = 0, 
-            cWidth = 3, 
-            maxCols = 20, 
+            colors = true,
+            title = '',
+            depth = 0,
+            cWidth = 3,
+            maxCols = 20,
             offsetBase = 32
-        }={}) {
+        } = {}) {
             let pp = PP
             if (!colors) { pp = pp.nostylin() }
             const idMaxW = 8
@@ -1026,7 +1026,7 @@ export const ShatOps = {
     },
 
     takeLines(mem: ShatteredMemory, atLine, contextBefore = 0, contextAfter = 0) {
-        let lines: {at: string, before: string[], after: string[]} = { at: '', before: [], after: [] }
+        let lines: { at: string, before: string[], after: string[] } = { at: '', before: [], after: [] }
         let line = 1
         for (let o = 0; o < mem.length; o++) {
             const c = mem.getVoiceAt(o)
@@ -1046,7 +1046,7 @@ export const ShatOps = {
                 lines.after.push(c)
             }
         }
-        
+
         lines.before = lines.before.join('').split('\n')
         lines.after = lines.after.join('').split('\n')
 
@@ -1255,19 +1255,19 @@ if (import.meta.vitest) {
     test('judgements', () => {
         let caComments = new CursedDataGazer(ShatteredMemory({ content: '<title>Hello<!---></title><h1><!--exclude me--></h1>' }))
         let l = caComments.lens()
-        l.dichotomousJudgement({entryPattern: '<!--', exitPattern: '-->'})
+        l.dichotomousJudgement({ entryPattern: '<!--', exitPattern: '-->' })
         expect(l.image).toBe('<title>Hello</title><h1></h1>')
 
         let caComments2 = new CursedDataGazer(ShatteredMemory({ content: '<title>Hello<!---></title><h1><!--exclude me--></h1>' }))
         let l2 = caComments2.lens({ creed: { comment: 'shun' } })
-        l2.dichotomousJudgement({entryPattern: '<!--', exitPattern: '-->', sigil: 'comment'})
+        l2.dichotomousJudgement({ entryPattern: '<!--', exitPattern: '-->', sigil: 'comment' })
         expect(l2.image).toBe('<title>Hello</title><h1></h1>')
     })
 
     test('selections and replacements', () => {
         let gumpo = new CursedDataGazer(ShatteredMemory({ content: 'I dont know some type of gumpo guy i can be anything' }))
         let l = gumpo.lens()
-        l.dichotomousJudgement({entryPattern: 'of', exitPattern: 'guy', sigil: 'spoop'})
+        l.dichotomousJudgement({ entryPattern: 'of', exitPattern: 'guy', sigil: 'spoop' })
         l.replaceBySigil('spoop', 'of shoop fella')
         expect(l.image).toBe('I dont know some type of shoop fella i can be anything')
     })

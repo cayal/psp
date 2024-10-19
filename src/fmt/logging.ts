@@ -5,9 +5,6 @@ export const L = (() => {
         let nextOut: string
         while (true) {
             if (nextOut = yield) {
-                if (typeof nextOut !== 'string') {
-                    nextOut = format(nextOut)
-                }
                 process.stderr.write(nextOut)
             }
         }
@@ -18,8 +15,14 @@ export const L = (() => {
     writer.next('Logger initialized.\n')
 
     return {
-        log: async (...s) => { 
+        log: async (...a) => { 
+            const s = a.map(format)
             writer.next(s.join('\t'))
+        },
+
+        error: async (...a) => { 
+            const s = a.map(format)
+            writer.next('\x1b[31m' + s.join('\t') + '\x1b[0m')
         }
     }
 })()

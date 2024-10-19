@@ -121,12 +121,15 @@ export class PukableSlotPocket {
         exit: new RegExp(`</${name}\\s*>$`),
     })
 
-    constructor(rootLoc: PLinkLocable, targetPath: string | (PLink & QF), includedFromChain = []) {
+    constructor(rootLoc: PLinkLocable, targetPath: string | Queried, includedFromChain = []) {
 
         this.rootLoc = rootLoc
         this.#ownLocator = typeof targetPath == 'string' ? rootLoc(targetPath) : rootLoc(targetPath.relpath)
 
-        this.#ownLink = indeedHtml(typeof targetPath == 'string' ? this.#ownLocator('.') : targetPath)
+        this.#ownLink = typeof targetPath == 'string' 
+            ? indeedHtml(this.#ownLocator('.'))
+            : indeedHtml(targetPath)
+
         this.uname = PP.shortcode()
         this.reprName = `<PSP${this.uname} @="${this.#ownLink.relpath}">`
 
@@ -229,14 +232,6 @@ export class PukableSlotPocket {
     get ownFilename() {
         return this.#ownLink.relpath
     }
-
-     deepGetAssocFilenames() {
-        return [
-            this.#ownLink.relpath,
-        ...this.#slurpedSubPockets.flatMap(x => x.pocket.deepGetAssocFilenames()),
-        ]
-    }
-
 
     suckRawBubbles() {
         const voidBubbles = this.#juiceLens.lensedCaptureAll(PukableSlotPocket.voidBubblePattern)
@@ -549,6 +544,13 @@ export class PukableSlotPocket {
         
     }
 
+    deepGetAssocFilenames() {
+        return [
+            this.#ownLink.relpath,
+        ...this.#slurpedSubPockets.flatMap(x => x.pocket.deepGetAssocFilenames()),
+        ]
+    }
+
     deepGetRawSlots(): RawSlot[] {
         return [...this.#rawSlots, ...Object.values(this.#slurpedSubPockets).flatMap(s => s.pocket.deepGetRawSlots())]
     }
@@ -620,7 +622,8 @@ export class PukableSlotPocket {
             for (let bs of burpBubbles) {
                 let sp = PP.spaces(leadup.length)
                 let stick = '|-' + _ø
-                let valPeek = bs.rawMarkup.match(/>(.*)</)[1].slice(0, 20) + '...'
+                let innerCon = bs.rawMarkup.match(/>(.*)</)[1]
+                let valPeek = innerCon.slice(0, 20) + (innerCon.length > 20 ? '[...]' : '')
                 yield `${_p}|${sp}${stick}${slotStylin(bs.slotAttr)}: ${valPeek}`
 
             }
@@ -664,12 +667,21 @@ if (import.meta.vitest) {
     let psp1;
 
     test('Can construct PSP', () => {
-        let link1 = LinkPeepLocator(links, 'testdata/psp', '.')
+        let link1 = LinkPeepLocator(links)
         expect("reason" in link1).toBe(false)
-        psp1 = new PukableSlotPocket(link1 as (PLink & QF))
+        psp1 = new PukableSlotPocket(link1, 'testdata/psp')
     })
 
     test('Pockets slurped; Pockets in comments not slurped', () => {
-        // expect(psp1.slurps).toStrictEqual(['testdata/psp/inclusion.html'])
+        expect(psp1.deepGetAssocFilenames()).toStrictEqual(['testdata/psp/index.html', 'testdata/psp/inclusion.html'])
+        console.log([...psp1.blowChunks()])
+        expect([...psp1.blowChunks()]).toStrictEqual(
+            [`\n\n<p>The main thing</p>\n\n`, 
+             `<div>`,
+             `<h3>Included</h3>\n<p><slot name=\"theslot\">...</slot></p>`,
+             `\n    \n`,
+             `</div>`,
+             ``
+             ])
     })
 }

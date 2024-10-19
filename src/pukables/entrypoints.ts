@@ -1,7 +1,7 @@
 import { PukableSlotPocket as PukableSlotPocket } from './slotPockets';
 import { FSPeep } from '../paths/filePeeping';
-import { HData, LinkPeeps, LinkPeepLocator, PLink, PeepedLinks, QF, LinkLocator, indeedHtml, PLinkLocable, Queried, HconLensMap } from '../paths/linkPeeping.js';
-import { PP, pprintProblem } from '../fmt/ppstuff.js';
+import { LinkPeeps, LinkPeepLocator, PLink, indeedHtml, PLinkLocable, Queried, HconLensMap } from '../paths/linkPeeping.js';
+import { PP } from '../fmt/ppstuff.js';
 import { CursedDataGazer } from '../textEditing/evilCurses';
 import { L } from '../fmt/logging';
 
@@ -158,13 +158,15 @@ export class PukableEntrypoint {
     }
 }
 
+// @ts-ignore
 if (import.meta.vitest) {
+    // @ts-ignore
     const { test, assert, expect } = import.meta.vitest
     let pel;
 
     test("There's no time left. We must barely test this at all.", () => {
         const fst = FSPeep({ entrypoint: 'testdata/pwl' })
         const links = LinkPeeps({ entrypoint: fst })
-        pel = new PukableEntrypoint(LinkPeepLocator(links, 'testdata/pwl', '/'))
+        pel = new PukableEntrypoint(LinkPeepLocator(links), 'testdata/pwl')
     })
 }

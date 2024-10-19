@@ -3,9 +3,7 @@ import { CursedDataGazer as CursedDataGazer, ShatteredMemory } from "../textEdit
 import { FSPeep } from "./filePeeping";
 import { PP, pprintProblem } from "../fmt/ppstuff.js";
 import { join, relative, resolve } from "path";
-import { ModalCharGaze } from "./charGazing.js";
 import { isAscii, isUtf8 } from "buffer";
-import { assert } from "console";
 import { L } from "../fmt/logging";
 
 
@@ -180,7 +178,7 @@ export const LinkPeepLocator: (_: LinkPeeps) => PLinkLocable = ({ rootAbs, links
         const itSaMe = (l: PLink) => (l.relpath == atA)
 
         if (!existsSync(atA)) {
-            console.error(links)
+            L.error(links)
             throw new ReferenceError(`${dbgInfo}: '${atA}' does not exist.`)
         }
         else if (!links.some(itSaMe)) {

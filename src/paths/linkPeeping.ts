@@ -128,7 +128,6 @@ function PLQ(from: Exclude<PLink, { type: 'dir' }>, respondingTo: QF): PLink & Q
         }
 
         const textContent = from.ogPeep.contents.data
-        console.log(from.ogPeep)
         const gazer = new CursedDataGazer(ShatteredMemory({ content: textContent }))
         const content = gazer.lens({ creed: { comment: 'shun' } }, 'default')
         content.dichotomousJudgement({

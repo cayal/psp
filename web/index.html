@@ -8,6 +8,7 @@
   <body>
     <style>
       body {
+          box-sizing: border-box;
           display: grid;
           font-family: system-ui, sans-serif;
           height: 100vh;
@@ -27,12 +28,18 @@
       
       .card-wrap {
         display: grid;
-        grid-template-columns: calc(50% - 1em) calc(50% - 1em);
-        column-gap: 2em;
+        grid-template-columns: calc(50%) calc(50%);
+        column-gap: 2rem;
       }
       
       bar-card {
           min-height: 200px;
+          display: grid;
+          grid-template-rows: subgrid;
+      }
+      
+      :root img {
+        border: 10px solid red;
       }
     </style>
     <smoke-test>
@@ -44,11 +51,11 @@
        <section class="card-wrap">
            <bar-card class="blue">
              <span slot="title">This is one instance of a card</span>
-             <span slot="description">Bonjour, <img src="pretzel1.png" >e monde</span>
+             <span slot="description"><img src="pretzel1.png" >Bonjour, le monde</span>
            </bar-card>
            <bar-card id="cowboy">
              <span slot="title">And this is another</span>
-             <span slot="description">Howdy peeps whats goin on</span>
+             <span slot="description"><img src="pretzel2.png" >Howdy peeps whats goin on</span>
            </bar-card>
        </section>
     </section>

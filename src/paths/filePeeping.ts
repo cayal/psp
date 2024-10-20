@@ -28,15 +28,16 @@ type Dimp = Wimp & {
     imp: 'd',
     contents: { contentType: 'dirent', data: string[] },
     getDescendants: () => FSPeep[],
-    fileApply: <T>(f: FApC<T>, ...rest: unknown[]) => T[],
-    connectWatcher: (port: MessagePort) => FSWatcher
+    fApply: <T>(f: FApC<T>, ...rest: unknown[]) => T[],
+    connectWatcher: (port: MessagePort, lastTransmits?: { [whichFile: string]: number }) => FSWatcher
+    disconnectWatcher: () => void,
     getWatchSet: (_: MessagePort) => Set<unknown>
 }
 
 type Fimp = Wimp & {
     imp: 'f',
     contents: ContentCouplet,
-    fileApply: <T>(f: FApC<T>, ...rest: unknown[]) => T,
+    fApply: <T>(f: FApC<T>, ...rest: unknown[]) => T,
 }
 
 type FSPeepOpts = {
@@ -105,10 +106,11 @@ function Dimp(basis: FSPbv, changeTransmitter?: MessagePort): FSPbv & Dimp {
         repr: _reprd,
         contents: _contents,
         peepReduce: _peepReduced,
-        fileApply: _fileApplyd,
+        fApply: _fileApplyd,
         getRelative: _getRelatived,
         getDescendants: _getDescendantsd,
         connectWatcher: _connectWatcherToPort,
+        disconnectWatcher: _disconnectWatcher,
         getWatchSet: _getWatchSetd
     }
 
@@ -147,7 +149,7 @@ function Dimp(basis: FSPbv, changeTransmitter?: MessagePort): FSPbv & Dimp {
 
     function _fileApplyd<T>(f: FApC<T>, ...rest: unknown[]): T[] {
         const des = dimp.getDescendants()
-        return des.flatMap(ch => ch.fileApply(f, ...rest))
+        return [f(dimp), ...des.flatMap(ch => ch.fApply(f, ...rest))]
     }
 
     function _getRelatived(relpath: string) {
@@ -198,41 +200,52 @@ function Dimp(basis: FSPbv, changeTransmitter?: MessagePort): FSPbv & Dimp {
     }
 
     let _watcher: FSWatcher;
-    let _lastTransmit = performance.now();
+    let _port: MessagePort
 
-    function _connectWatcherToPort(port: MessagePort) {
+    function _connectWatcherToPort(port: MessagePort, lastTransmits = {}) {
         if (!port) {
             throw new ReferenceError("Port required to receive change messages.")
         }
 
         if (_watcher) { return _watcher }
-        let ws = _getWatchSetd(port)
+        _port = port
+
+        let ws = _getWatchSetd(_port)
         for (let subw of ws) {
             if (subw.recurse) {
-                subw.recurse(port)
+                subw.recurse(_port, lastTransmits)
             }
         }
 
-        if (port) {
-            _watcher = watch(dimp.path.base, { persistent: false, recursive: false }, (x, filename) => {
-                let changePath = join(dimp.relpath, filename ?? '')
-                L.log(`${dimp.relpath}: ${changePath} changed on disk. \n`)
-                if (performance.now() - _lastTransmit > 100) {
-                    L.log(`${dimp.relpath}: Posting 'change ${changePath}'. \n`)
-                    _lastTransmit = performance.now()
-                    port.postMessage(`change ${changePath}`)
-                }
-            })
-        }
+        _watcher = watch(dimp.path.base, { persistent: false, recursive: false }, (x, filename) => {
+            let changePath = join(dimp.relpath, filename ?? '')
+            L.log(`(${dimp.relpath}/)${filename} changed on disk. \n`)
+            let when = lastTransmits[changePath]
+            let delta = (performance.now() - (when || 0))
+            if (delta > 100) {
+                L.log(`T+${delta.toFixed(2)} | ${dimp.relpath}: Posting 'change ${changePath}'. \n`)
+                lastTransmits[changePath] = performance.now()
+                _port.postMessage(`change ${changePath}`)
+            }
+        })
     }
 
     function _getWatchSetd(ct: MessagePort) {
-        type Q = { key: string, recurse: ((_: MessagePort) => void) | false }
-        let x: Q[] = dimp.fileApply(fst => ({
-            key: fst.path.base,
-            recurse: fst.imp == 'd' ? fst.connectWatcher : false
-        }))
+        type Q = { key?: string, recurse?: (Dimp["connectWatcher"]) | false }
+        let x: Q[] = dimp.fApply(fst => (
+            fst !== dimp
+                ? {
+                    key: fst.path.base,
+                    recurse: fst.imp == 'd' ? fst.connectWatcher : false
+                }
+                : {}))
         return new Set<Q>(x)
+    }
+
+    function _disconnectWatcher() {
+        _watcher.close()
+        dimp.fApply(fst => { if (fst !== dimp && fst.imp === 'd') fst.disconnectWatcher() })
+        return
     }
 
     return dimp
@@ -264,7 +277,7 @@ function Fimp(basis: FSPbv): FSPbv & Fimp {
         repr: reprf,
         contents: { contentType, data },
         peepReduce: peepReduceF,
-        fileApply: fileApplyf,
+        fApply: fApplyf,
         getRelative: getRelativef,
     }
 
@@ -285,7 +298,7 @@ function Fimp(basis: FSPbv): FSPbv & Fimp {
         return f(initial, fimp)
     }
 
-    function fileApplyf(f, ...rest) {
+    function fApplyf(f, ...rest) {
         return f(fimp, ...rest)
     }
 

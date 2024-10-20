@@ -110,10 +110,6 @@ export class PukableSlotPocket {
 
     #validations: [number, string][] = []
 
-    static slurpDeclFromPattern = /^<!slurp\s[^<>]*from=['"]?([^'"]+)['"]?[^<>]*>/
-    static slurpDeclAsPattern = /^<!slurp\s[^<>]*as=['"]?([^'"]+)['"]?[^<>]*>/
-
-
     static getBurpPatterns = (name) => ({
         presence: new RegExp(`<${name}(?:\\s*>|\\s[^<>]*>).*</${name}\\s*>`, 's'),
         entry: new RegExp(`^<${name}(?:\\s*>|\\s[^<>]*>)`),
@@ -217,6 +213,10 @@ export class PukableSlotPocket {
 
     suckSlurps() {
         const slurpPattern = /<!slurp [^>]*>/g
+        const slurpFromPattern = /^<!slurp\s[^<>]*from=['"]?([^'"]+)['"]?[^<>]*>/
+        const slurpAsPattern = /^<!slurp\s[^<>]*as=['"]?([^'"]+)['"]?[^<>]*>/
+
+
 
         this.slurpMarker = 'slurp' + this.uname
 
@@ -228,7 +228,7 @@ export class PukableSlotPocket {
 
             // The `from` attribute is required...
             let match: RegExpMatchArray;
-            if (!(match = chars.match(PukableSlotPocket.slurpDeclFromPattern))) {
+            if (!(match = chars.match(slurpFromPattern))) {
                 const vmsg = `Missing 'from' attribute in slurp tag.`
                 pprintProblem(this.#ownLink.relpath, endSourceLine, vmsg, false)
                 this.#validations.push([endSourceLine, vmsg])
@@ -247,7 +247,7 @@ export class PukableSlotPocket {
             }
 
             // The `as` attribute is also required...
-            if (!(match = chars.match(PukableSlotPocket.slurpDeclAsPattern))) {
+            if (!(match = chars.match(slurpAsPattern))) {
                 const vmsg = `Missing 'as' attribute in slurp tag.`
                 pprintProblem(this.#ownLink.relpath, endSourceLine, vmsg, false)
                 this.#validations.push([endSourceLine, vmsg])
@@ -520,7 +520,7 @@ export class PukableSlotPocket {
 
     gulpAndDigestStyles() {
         this.styleBlockMarker = PP.shortcode('style')
-        const outerRulePattern = /^\s+((html|head|body)({|[ .[:+~|>#][^{]*){[^}]+})/gm
+        const outerRulePattern = /^\s+((:root|html|head|body)({|[ .[:+~|>#][^{]*){[^}]+})/gm
         const univRulePattern = /^\s+(\*({|[ .[:+~|>#][^{]*){[^}]+})/gm
         let elementSelectorPattern = (
             (burpTagName: string) =>
@@ -600,6 +600,10 @@ export class PukableSlotPocket {
      *
      * 2) The return type of deepGetStyleContent is a set, so only one of each
      *      unique style contents will be in the final document.
+     *
+     * 3) Remember that if you have <div slot="x"><b> nested markup </b></div>,
+     *      like the <b> tag above, that nested content will be in the light DOM.
+     *      So target it with ":root b { }" or "body b { }" or similar.
      * 
      * @param styleset 
      * @returns 

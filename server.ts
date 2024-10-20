@@ -1,5 +1,5 @@
 import { decodeFrames, pongFrame, prepareFrame, WSChangeset } from './src/websockets/websocketFraming';
-import { LinkPeeps, LinkPeepLocus, PLink } from './src/paths/linkPeeping';
+import { LinkPeeps, LinkPeepLocus, PLink, PLinkLocus } from './src/paths/linkPeeping';
 import { PukableEntrypoint } from './src/pukables/entrypoints';
 import { MessageChannel } from 'node:worker_threads'
 import { FSPeep, FSPeepRoot } from './src/paths/filePeeping'
@@ -32,19 +32,37 @@ obs.observe({ type: 'measure' });
 
 performance.mark('a')
 
+let webrootEntry, locus: PLinkLocus, pLinks: LinkPeeps
+
 let rebuildLinkLocator = () => {
+    if (webrootEntry) {
+        webrootEntry.disconnectWatcher()
+    }
+
     // Start by scanning the folder again and building a link tree.
-    let webrootEntry = FSPeepRoot({ entrypoint: WEBROOT })
-    let pLinks = LinkPeeps({ entrypoint: webrootEntry })
+    let _webrootEntry = FSPeepRoot({ entrypoint: WEBROOT })
+    if (!_webrootEntry) {
+        L.log(`Couldn't resolve root directory ${WEBROOT}.`)
+        return process.exit(1)
+    }
+
+    let _pLinks = LinkPeeps({ entrypoint: _webrootEntry })
+    if (!_pLinks) {
+        L.log(`Couldn't construct LinkPeeps from entrypoint.`)
+        return process.exit(1)
+    }
 
     // Connect `change` messages from the new FSPeep to the message port.
-    webrootEntry.connectWatcher(changeTransmitter)
+    _webrootEntry.connectWatcher(changeTransmitter)
 
-    let locus = LinkPeepLocus(pLinks)
-    return { locus, webrootEntry, pLinks }
+    let _locus = LinkPeepLocus(_pLinks)
+
+    webrootEntry = _webrootEntry
+    locus = _locus
+    pLinks = _pLinks
 }
 
-let { locus, webrootEntry, pLinks } = rebuildLinkLocator()
+rebuildLinkLocator()
 
 performance.mark('b')
 performance.measure('Built file watch tree', 'a', 'b')
@@ -67,10 +85,7 @@ async function build(root: FSPeep, relpathToBuild?: string): Promise<PukableEntr
 
     relpathsToPukers = {}
 
-    let llll = rebuildLinkLocator()
-    locus = llll.locus
-    webrootEntry = llll.webrootEntry
-    pLinks = llll.pLinks
+    rebuildLinkLocator()
 
     const buildSet: PLink[] = relpathToBuild
         ? [pLinks.links.find(x =>
@@ -199,7 +214,6 @@ server.on('stream', async (stream, headers) => {
         });
 
         stream.write(res.result.data)
-        console.log("sent somes setuff")
         stream.end()
         return
 

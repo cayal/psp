@@ -117,7 +117,6 @@ export class PukableSlotPocket {
     })
 
     constructor(rootLoc: PLinkLocus, targetPath: string | (PLink & Queried), includedFromChain = []) {
-
         this.rootLoc = rootLoc
         this.#ownLocator = typeof targetPath == 'string'
             ? rootLoc(targetPath) :
@@ -127,7 +126,7 @@ export class PukableSlotPocket {
             ? indeedHtml(this.#ownLocator('.'))
             : indeedHtml(targetPath)
 
-        this.uname = PP.shortcode()
+        this.uname = cssableShortcode()
         this.reprName = `<PSP${this.uname} @="${this.#ownLink.relpath}">`
 
         const initStart = performance.now()
@@ -277,7 +276,7 @@ export class PukableSlotPocket {
     sniffRawSlots() {
         const slotOpenPattern = /^<slot [^<>]*name=['"]([^'"]+)['"][^<>]*>/
         const slotClosePattern = /<\/slot[^<>]*>$/
-        const ownUname = PP.shortcode('-')
+        const ownUname = cssableShortcode()
         const thisSlotMarker = `rawSlot${this.uname}${ownUname}`
 
         let slots;
@@ -490,7 +489,13 @@ export class PukableSlotPocket {
         let { digestedOpenTag, className } = this.#digestRawBurpOpenTag(rb)
         let digestedCloseTag = rb.rawCloseTag.replace(`${rb.tagName}`, 'div')
 
-        let digestedInnerResidue = rb.rawInnerMarkup.replaceAll(/<.*>[^<>]*<.*>/g, '')
+
+        let digestedInnerResidue = rb.rawInnerMarkup
+
+        let ownBubs = this.#rawBubbles.filter(bub => bub.containingBurp === rb)
+        for (let bub of ownBubs) {
+            digestedInnerResidue = digestedInnerResidue.replace(bub.rawMarkup, '')
+        }
 
         // Residual concatenation end up being useful, so disabling this warning.
         // if (digestedInnerResidue.replaceAll(/\s/g, '').length) {
@@ -730,7 +735,8 @@ export class PukableSlotPocket {
             for (let bs of burpBubbles) {
                 let sp = PP.spaces(leadup.length)
                 let stick = '|-' + _ø
-                let innerCon = bs.rawMarkup.match(/>(.*)</)[1]
+                let innerCon = bs.rawMarkup.match(/>(.*)</s)?.[1]
+                    .split('').map(x => PP.oneChar(x, 1)).join('') || ''
                 let valPeek = innerCon.slice(0, 20) + (innerCon.length > 20 ? '[...]' : '')
                 yield `${_p}|${sp}${stick}${slotStylin(bs.slotAttr)}: ${valPeek}`
 
@@ -765,6 +771,11 @@ export class PukableSlotPocket {
     }
 }
 
+function cssableShortcode() {
+    const vowel = () => 'aeiou'[Math.floor(Math.random() * 5)]
+    const conso = () => 'bcdfghjklmnpqrstvwxyz'[Math.floor(Math.random() * 21)]
+    return '-' + [conso, vowel, vowel, conso, vowel, conso].map(x => x()).join('')
+}
 
 // @ts-ignore
 if (import.meta.vitest) {

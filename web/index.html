@@ -20,26 +20,41 @@
       }
       
       .example-wrap {
-        outline: 1px solid #ccc;
-        width: 500px;
-        border-radius: 2px;
-        padding: .2em 2em  1em 2em;
+          padding: .2em 2em  1em 2em;
+          outline: 1px solid #ccc;
+          border-radius: 2px;
+          width: 500px;
       }
       
       .card-wrap {
-        display: grid;
-        grid-template-columns: calc(50%) calc(50%);
-        column-gap: 2rem;
+          grid-template-columns: 1fr 1fr;
+          column-gap: 2rem;
+          display: grid;
       }
       
       bar-card {
-          min-height: 200px;
           display: grid;
-          grid-template-rows: subgrid;
       }
       
-      :root img {
-        border: 10px solid red;
+      bar-card {
+          outline: 1px solid lavender;
+          padding: 0.5rem 1rem 0.5rem 1rem;
+          background: #faf7fe;
+          border-radius: 3px;
+          color: #333;
+          display: grid;
+          grid-template-rows: 3rem 1fr;
+      }
+
+      bar-card p {
+          font-weight: lighter;
+          line-height: 1.4rem;
+      }
+      
+      bar-card img {
+          max-width: 100%;
+          border-radius: 3px;
+          display: block;
       }
     </style>
     <smoke-test>
@@ -50,12 +65,19 @@
        <p>PSP is an experiment in open shadow roots.</p>
        <section class="card-wrap">
            <bar-card class="blue">
-             <span slot="title">This is one instance of a card</span>
-             <span slot="description"><img src="pretzel1.png" >Bonjour, le monde</span>
+             <span slot="title">This is a card element</span>
+             <span slot="description">Hello, world. <br>
+                This thing has slots for `title` and `description`. <br>
+                This paragraph is written in the `description` slot.
+            </span>
            </bar-card>
            <bar-card id="cowboy">
              <span slot="title">And this is another</span>
-             <span slot="description"><img src="pretzel2.png" >Howdy peeps whats goin on</span>
+             <span slot="description">
+               Howdy peeps whats goin on
+               <hr>
+             </span>
+             <img src="pretzel2.png">
            </bar-card>
        </section>
     </section>

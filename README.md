@@ -1,4 +1,5 @@
 ![Demonstration of file structure with slots](docs/psp-structure.png)
+
 # Pukable Slot Pockets
 Pukable Slot Pockets is an experimental frontend tool for declarative templating within HTML using syntax loosely based on the HTML Modules proposal.
 

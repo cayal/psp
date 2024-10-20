@@ -136,18 +136,32 @@ export class PukableEntrypoint {
     *blowChunks() {
         const { preBodyContent, innerStyleTag } = this.regurgitatePrebody()
         const postBody = this.#gazer.getLens(this.#bodyPartLensMap.postBody).image ?? ''
-        debugger;
 
-        yield preBodyContent
+        if (preBodyContent) {
+            yield preBodyContent
+        }
+
         yield this.hostOpen
+
         yield this.templateOpen
-        yield innerStyleTag
+
+        if (innerStyleTag) {
+            yield innerStyleTag
+        }
+
         yield* this.#bodyBarfer.blowChunks()
+
         yield this.templateClose
-        yield this.#bodyBarfer.deepGetPukableBubbles().map(x => x.digestedMarkup).join('\n')
+
+        yield* this.#bodyBarfer.deepGetPukableBubbles().map(x => x.digestedMarkup)
+
         yield this.hostClose
+
         yield this.reloaderScript
-        yield postBody
+
+        if (postBody) {
+            yield postBody
+        }
     }
 
     *debugRepr() {

@@ -115,6 +115,7 @@ function Dimp(basis: FSPbv, changeTransmitter?: MessagePort): FSPbv & Dimp {
     }
 
     function _getDescendantsd() {
+        dimp.contents.data = readdirSync(basis.relpath)
         let x = dimp.contents.data.map(subEntry => FSPeep({ entrypoint: subEntry, from: dimp }))
         return x
     }
@@ -217,9 +218,14 @@ function Dimp(basis: FSPbv, changeTransmitter?: MessagePort): FSPbv & Dimp {
             }
         }
 
-        _watcher = watch(dimp.path.base, { persistent: false, recursive: false }, (x, filename) => {
+        _watcher = watch(dimp.relpath, { persistent: false, recursive: false }, (x, filename) => {
             let changePath = join(dimp.relpath, filename ?? '')
             L.log(`(${dimp.relpath}/)${filename} changed on disk. \n`)
+            if (!existsSync(join(dimp.relpath, filename))) {
+                L.log(`(${dimp.relpath}/)${filename} is no more. \n`)
+                return
+            }
+
             let when = lastTransmits[changePath]
             let delta = (performance.now() - (when || 0))
             if (delta > 100) {
@@ -243,7 +249,14 @@ function Dimp(basis: FSPbv, changeTransmitter?: MessagePort): FSPbv & Dimp {
     }
 
     function _disconnectWatcher() {
-        _watcher.close()
+        if (!existsSync(dimp.relpath)) {
+            return
+        }
+
+        if (_watcher) {
+            _watcher.close()
+        }
+
         dimp.fApply(fst => { if (fst !== dimp && fst.imp === 'd') fst.disconnectWatcher() })
         return
     }

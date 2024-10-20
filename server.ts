@@ -19,10 +19,6 @@ let cannotPuke = false
 
 const { port1: changeReceiver, port2: changeTransmitter } = new MessageChannel()
 
-const webpathsToPukers: { [webpath: string]: PukableEntrypoint } = {}
-
-let relpathsToPukers: { [relpath: string]: PukableEntrypoint[] } = {}
-
 const obs = new PerformanceObserver((items) => {
     L.log(`${items.getEntries()[0].name} in ${items.getEntries()[0].duration} ms\n`);
     performance.clearMarks();
@@ -81,9 +77,13 @@ const server = createSecureServer({
 
 let buildTask = build(webrootEntry);
 
-async function build(root: FSPeep, relpathToBuild?: string): Promise<PukableEntrypoint[]> {
+type Relent = { [relpath: string]: PukableEntrypoint[] }
+type Webuke = { [webpath: string]: PukableEntrypoint }
 
-    relpathsToPukers = {}
+async function build(root: FSPeep, relpathToBuild?: string): Promise<{ built: PukableEntrypoint[], webuke: Webuke, relent: Relent }> {
+
+    let _relent: Relent = {}
+    const _webuke: Webuke = {}
 
     rebuildLinkLocator()
 
@@ -97,12 +97,12 @@ async function build(root: FSPeep, relpathToBuild?: string): Promise<PukableEntr
     if (!buildSet) {
         console.error('Nothing to build.')
         cannotPuke = true;
-        return []
+        return { built: [], relent: {}, webuke: {} }
     }
 
     L.log(PP.styles.pink + `\n> Building ${PP.ar(buildSet.map((i: any) => i.relpath))}. \n` + PP.styles.none)
 
-    let entrypointsBuilt = []
+    let _built = []
     try {
 
         performance.mark('a')
@@ -110,15 +110,15 @@ async function build(root: FSPeep, relpathToBuild?: string): Promise<PukableEntr
             const entrypoint = new PukableEntrypoint(
                 locus, iPeep.relpath, undefined, RELOADER_SCRIPT)
 
-            webpathsToPukers[entrypoint.ownLink.webpath] = entrypoint
+            _webuke[entrypoint.ownLink.webpath] = entrypoint
 
             for (let assoc of entrypoint.getAssociatedFilenames()) {
-                if (!relpathsToPukers[assoc]) { relpathsToPukers[assoc] = [] }
-                relpathsToPukers[assoc].push(entrypoint)
+                if (!_relent[assoc]) { _relent[assoc] = [] }
+                _relent[assoc].push(entrypoint)
             }
 
-            relpathsToPukers[entrypoint.ownLink.relpath] = [entrypoint]
-            entrypointsBuilt.push(entrypoint)
+            _relent[entrypoint.ownLink.relpath] = [entrypoint]
+            _built.push(entrypoint)
         }
         performance.mark('b')
         performance.measure('Built PukableEntrypoints from index files', 'a', 'b')
@@ -127,12 +127,12 @@ async function build(root: FSPeep, relpathToBuild?: string): Promise<PukableEntr
         console.error("Ran into a problem building files.")
         cannotPuke = true
     }
-    return entrypointsBuilt
+    return { built: _built, relent: _relent, webuke: _webuke }
 }
 
 let enqueueReplRepr = null;
 
-changeReceiver.addEventListener("message", (ev: MessageEvent) => {
+changeReceiver.addEventListener("message", async (ev: MessageEvent) => {
 
     let [mode, relpath] = ev.data.split(" ")
     if (mode == "change") {
@@ -144,7 +144,8 @@ changeReceiver.addEventListener("message", (ev: MessageEvent) => {
         })
 
     } else if (mode == 'built' && (relpath === enqueueReplRepr)) {
-        let builtPoints = relpathsToPukers[relpath]
+        let { relent } = await buildTask
+        let builtPoints = relent[relpath]
 
         for (let devInfo of builtPoints.map(x => x.debugRepr())) {
             L.log(devInfo)
@@ -165,20 +166,19 @@ server.on('stream', async (stream, headers) => {
         stream.end()
     }
 
-    await buildTask
+    let { webuke } = await buildTask
 
     const path = headers[':path'] || '/'
 
-    let fileMatch: PLink
     let chunkProvider: PukableEntrypoint
 
-    if (chunkProvider = webpathsToPukers[path]) {
+    if (chunkProvider = webuke[path]) {
         stream.respond({
             'content-type': 'text/html; charset=utf-8',
             ':status': 200,
         });
 
-        let entrypoint = webpathsToPukers[chunkProvider.ownLink.webpath]
+        let entrypoint = webuke[chunkProvider.ownLink.webpath]
 
         for (let v of entrypoint.blowChunks()) {
             if (!v) {
@@ -194,9 +194,9 @@ server.on('stream', async (stream, headers) => {
         return
 
     }
-    else if (fileMatch = pLinks.links.find(pl => pl.webpath == path)) {
-        let res = locus(WEBROOT)(path)
-        if (res.type !== 'file' || res.result.type !== 'okFile') {
+    else if (pLinks.links.find(pl => pl.webpath == path)) {
+        let fileMatch = locus(WEBROOT)(path)
+        if (fileMatch.type !== 'file' || fileMatch.result.type !== 'okFile') {
             stream.respond({
                 'content-type': 'text/html; charset=utf-8',
                 ':status': 404,
@@ -206,14 +206,14 @@ server.on('stream', async (stream, headers) => {
             return
         }
 
-        let charset = res.result.contentType === 'text/html' ? ';charset=text/utf-8' : ''
+        let charset = fileMatch.result.contentType === 'text/html' ? ';charset=text/utf-8' : ''
 
         stream.respond({
-            'content-type': `${res.result.contentType}${charset}`,
+            'content-type': `${fileMatch.result.contentType}${charset}`,
             ':status': 200,
         });
 
-        stream.write(res.result.data)
+        stream.write(fileMatch.result.data)
         stream.end()
         return
 
@@ -258,7 +258,8 @@ const websocket = createServer({
 }, async (socket: Socket & { id?: number }) => {
     let accept;
 
-    changeset.addSocket(socket, relpathsToPukers)
+    let { relent } = await buildTask
+    changeset.addSocket(socket, relent)
 
     socket.addListener("error", (e) => {
         changeReceiver.removeListener("message", changeset.listeners[socket.id].cb)

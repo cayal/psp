@@ -51,7 +51,7 @@ export function pingFrame(socketId: number) {
     const byte1 = thisisMyFinalFrame | wsOps.ping
 
     const byte2 = 1
-    if (DEBUG_TIMEOUTS) { console.log("ping counter: " , pingCtr) }
+    if (DEBUG_TIMEOUTS) { console.log("ping counter: ", pingCtr) }
     const endByte = (pingCtr++) % 256
 
     return Uint8Array.from([byte1, byte2, endByte])
@@ -70,44 +70,44 @@ export function decodeFrames(message: Buffer): WSDecodeRes {
     const bytes = Uint8Array.from(message)
     const isMasked = 0b10000000
     if ((bytes[1] & isMasked) === 0) {
-       return { error: true, reason: 'Client sent an unmasked message.'}
+        return { error: true, reason: 'Client sent an unmasked message.' }
     }
-    
+
     const fin = bytes[0] & 0b10000000
     if (!fin) {
-           return { error: true, reason: `Multi-frame messages not implemented.`}
+        return { error: true, reason: `Multi-frame messages not implemented.` }
     }
 
     const ov = bytes[0] & 0b00001111
     if (!Object.values(wsOps).includes(ov as WSOpcode[keyof WSOpcode])) {
-           return { error: true, reason: `Unsupported opcode ${ov}`}
+        return { error: true, reason: `Unsupported opcode ${ov}` }
     }
     const opcode = Object.entries(wsOps).find(([_, ovi]) => ovi == ov)[0]
-    
+
     if (opcode == 'clos') {
-            return { opcode: 'clos', error: false }
+        return { opcode: 'clos', error: false }
     }
-    
+
     if (opcode == 'dbin' || opcode == 'cont') {
         // Will add logic to handle these if it ever seems necessary
         console.warn("Browser sent bytes with dbin/cont opcode.")
         console.warn(bytes)
     }
-    
+
     let payloadLength = bytes[1] & 0b01111111
     if (payloadLength > 125) {
-       return {error: true, reason: `Message is too large: ${bytes}`}
+        return { error: true, reason: `Message is too large: ${bytes}` }
     }
-    
+
     let mask = new DataView(bytes.buffer, 2, 4)
     let encoded = new DataView(bytes.buffer, 6, payloadLength)
 
     let decoded = opcode === 'dtxt' ? '' : [];
     let dec = new TextDecoder('utf-8')
     let take = opcode === 'dtxt'
-        ? (e, m, i) => decoded += dec.decode(Uint8Array.from([encoded.getUint8(i) ^ mask.getUint8(i%4)]))
+        ? (e, m, i) => decoded += dec.decode(Uint8Array.from([encoded.getUint8(i) ^ mask.getUint8(i % 4)]))
         // @ts-ignore
-        : (e, m, i) => decoded.push(...Uint8Array.from([encoded.getUint8(i) ^ mask.getUint8(i%4)])) 
+        : (e, m, i) => decoded.push(...Uint8Array.from([encoded.getUint8(i) ^ mask.getUint8(i % 4)]))
 
 
     for (let i = 0; i < encoded.byteLength; i++) {
@@ -136,20 +136,20 @@ export function WSChangeset(changeReceiver: MessagePort) {
         keepalive: _keepalive,
         addSocket: _addSocket
     }
-    
+
     function _startPings(id: number) {
-        if (!buildListeners[id]) { 
+        if (!buildListeners[id]) {
             console.error(`No socket ${id} for which to start pings.`)
-            return 
+            return
         }
-        
+
         if (DEBUG_TIMEOUTS) {
             console.debug('id: ', id)
             console.debug('interval: ', _interval)
             console.debug('deadline: ', _deadline)
         }
-        
-        let {sk, lastPongTime, timerId} = buildListeners[id]
+
+        let { sk, lastPongTime, timerId } = buildListeners[id]
 
         if (DEBUG_TIMEOUTS) {
             console.debug('lastPongTime: ', lastPongTime)
@@ -171,12 +171,12 @@ export function WSChangeset(changeReceiver: MessagePort) {
             buildListeners[id].timerId = setTimeout(_startPings, _interval, id, _interval, _deadline)
         }
     }
-    
+
     function _keepalive(id, pongData: number[]) {
 
-        if (!buildListeners[id]) { 
+        if (!buildListeners[id]) {
             console.error(`No socket ${id} to keep alive.`)
-            return 
+            return
         }
 
         if (!(buildListeners[id].lastPingValue)
@@ -186,7 +186,7 @@ export function WSChangeset(changeReceiver: MessagePort) {
         }
     }
 
-    function _addSocket(socket: Socket & {id?: number}, relpathsToPukers: {[rp: string]: PukableEntrypoint[]}) {
+    function _addSocket(socket: Socket & { id?: number }, relpathsToPukers: { [rp: string]: PukableEntrypoint[] }) {
         for (let i = 0; i < buildListeners.length; i++) {
             const { sk, cb, lastPongTime } = buildListeners[i]
             if (sk.destroyed || ((Date.now() - lastPongTime) > (_interval + _deadline))) {
@@ -210,6 +210,7 @@ export function WSChangeset(changeReceiver: MessagePort) {
 
                     if (mode == "built") {
                         const pukerDatas = relpathsToPukers[pName]
+                        console.log(pukerDatas)
                         for (let p of pukerDatas) {
                             let wp = `changed ${p.ownLink.webpath}`
 

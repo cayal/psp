@@ -19,20 +19,27 @@
           color: #def;
       }
       
-      .example-wrap {
+      .center-stage {
           padding: .2em 2em  1em 2em;
           outline: 1px solid #ccc;
           border-radius: 2px;
-          width: 500px;
+          width: 36rem;
       }
       
-      .card-wrap {
+      .center-stage > p {
+        line-height: 2rem;
+      }
+      
+      code {
+          background-color: #def;
+          color: #333;
+          padding: 0.3rem 0.5rem;
+          border-radius: 2px;
+      }
+      
+      .cards-wrap {
           grid-template-columns: 1fr 1fr;
           column-gap: 2rem;
-          display: grid;
-      }
-      
-      bar-card {
           display: grid;
       }
       
@@ -56,25 +63,30 @@
           border-radius: 3px;
           display: block;
       }
+
     </style>
     <smoke-test>
       <span slot="heading">It</span>
     </smoke-test>
-    <section class="example-wrap">
+    <section class="center-stage">
        <h2>Edit this page to see changes</h2>
-       <p>PSP is an experiment in open shadow roots.</p>
-       <section class="card-wrap">
+       <p>
+           <code>&lt;!slurp from="./somewhere.html" as="some-tag"&gt;</code> to specify 
+           a custom tag, and then use it as <code>&lt;some-tag&gt;</code>.
+       </p>
+       <section class="cards-wrap">
            <bar-card class="blue">
-             <span slot="title">This is a card element</span>
+             <span slot="title">This is a card component</span>
              <span slot="description">Hello, world. <br>
                 This thing has slots for `title` and `description`. <br>
                 This paragraph is written in the `description` slot.
+                The component has no slots specified for images.
             </span>
            </bar-card>
            <bar-card id="cowboy">
              <span slot="title">And this is another</span>
              <span slot="description">
-               Howdy peeps whats goin on
+               Threw a pretzel in there
                <hr>
              </span>
              <img src="pretzel2.png">

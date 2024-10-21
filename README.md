@@ -1,27 +1,85 @@
 ![Dizzying animated GIF of the thing](docs/unnecessarygif.gif)
 
 # Pukable Slot Pockets
-Pukable Slot Pockets is an experimental frontend tool for declarative templating within HTML using syntax loosely based on the HTML Modules proposal.
 
-On execution, it starts a local HTTP server with hot-reloading over WebSockets, which streams
-HTML files piece-by-piece to `https://localhost:3003`
+Pukable Slot Pockets is my personal strat for declarative frontend components.
+Instead of transforming a custom component extension into Javascript/JSX and then
+into HTML, it constructs a very loose concept of a plan of the DOM and injects other
+HTML files in tandem using Declarative Shadow Root, `<slot>` tags, and a `<!slurp>`
+declaration loosely based on the HTML Modules proposal.
 
-It introduces a `<!slurp from="src/to/b.html#foobar", as="name-here">` declaration, which creates a scoped import resolution applicable to an entire `.html` file regardless of its position.
 
-The `from` parameter is a relative link to an HTML fragment or file in the `src` folder.
-If there is no `#fragment` in the URL, the `<body>` tag of the target will become the slurpee.
+## Hot Reloading
 
-All appearances of the `as` parameter (for example, `<name-here></name-here>`) will then
-be replaced with the inner content of the fragment referenced by `from`.
+On startup, PSP boots a webserver on port 3003 as well as a WebSocket hot reload server.
 
-Suppose you have the following content in a file called `bar.html`:
+You can view `web/index.html` in the browser by going to `https://localhost:3003`.
+Similarly, if you created a new file at `web/foo/bar/index.html`, you can navigate to it by
+`https://localhost:3003/web/foo/bar`. When you make a change to the underlying HTML file or
+any of its dependencies in your text editor, the page opened in the browser will refresh.
+
+
+## Slurping and Burping
+
+An HTML file served by PSP can include a `<!slurp>` declaration. It has two attributes:
+`from` and `as`. 
+
+`from` determines from what file you'll be spitting tags into the file you're working on.
+Like other path attributes, the paths specified are relative to the file. You can include 
+fragment identifiers in the path.
+
+`as ` determines what tag name you'll use as a stand-in for the borrowed markup.
+
+For example, you might have this as a slurp declaration:
+```html
+<!slurp from="../to/b.html#foobar", as="name-here">
+```
+
+Here, tags are slurped up from the `b.html#foobar` file in the `to` subdirectory of the
+containing folder, and wherever you include `<name-here></name-here>`, that markup will
+be burped out into the page.
+
+If there is no `#fragment` in the path of the `from` attribute, the `<body>` tag of the 
+target will become the slurpee. If there's no `<body>` (for example, you just have an
+HTML snippet in the file), the entire file will become the slurpee.
+
+## Slotting and Bubbling
+
+Suppose `bar.html` has the following content:
 
 ```html
 file: bar.html
 ~~~~~~~~~~~~~~
-<h1>My favorite sentence</h1>
-<slot name="greeting">Hello there, y'all</slot>
+<h1>Phrasebook</h1>
+<p>
+Here are some handy phrases for when you travel to <slot name="location">Texas</slot>.
+</p>
+<ul>
+    <li><slot name="greeting">(Series of gunshots) Yeehaw. Howdy y'all.</slot></li>
+    <li><slot name="departure">Well, I reckon I'm hitting the dusty trail.</slot></li>
+</ul>
 ```
+
+The `slots` specified are default content. When you `<!slurp>` this file into another
+(say, `my-guide-to-vermont.html`) and use `phrase-book` for the `as` parameter,
+you'll include this content with the `<phrase-book>` tag.
+
+If you then add `<phrase-book></phrase-book>` to your page, the output of the PSP program 
+will prompt you to override these defaults:
+```
+|-- ! ->  unfilled slots: location.@ line 3
+|-- ! ->  unfilled slots: greeting.@ line 6
+|-- ! ->  unfilled slots: departure.@ line 7
+```
+
+Try providing some markup with `slot` attributes to satisfy this demand:
+
+```html
+`<phrase-book>
+    <span slot= // todo
+</phrase-book>`
+```
+
 
 PSP will parse other HTML files that `<!slurp` bar under a name, and interpolate slot contents
 `bar.html`'s content:

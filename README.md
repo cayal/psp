@@ -1,4 +1,4 @@
-![Dizzying animated GIF of the thing](docs/unnecessarygif.png)
+![Dizzying animated GIF of the thing](docs/unnecessarygif.gif)
 
 # Pukable Slot Pockets
 Pukable Slot Pockets is an experimental frontend tool for declarative templating within HTML using syntax loosely based on the HTML Modules proposal.

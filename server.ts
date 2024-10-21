@@ -20,7 +20,7 @@ let cannotPuke = false
 const { port1: changeReceiver, port2: changeTransmitter } = new MessageChannel()
 
 const obs = new PerformanceObserver((items) => {
-    L.log(`${items.getEntries()[0].name} in ${items.getEntries()[0].duration} ms\n`);
+    L.log(`${items.getEntries()[0].name} in ${items.getEntries()[0].duration.toFixed(2)} ms\n`);
     performance.clearMarks();
 });
 
@@ -31,12 +31,9 @@ performance.mark('a')
 let webrootEntry, locus: PLinkLocus, pLinks: LinkPeeps
 
 let rebuildLinkLocator = () => {
-    if (webrootEntry) {
-        webrootEntry.disconnectWatcher()
-    }
-
     // Start by scanning the folder again and building a link tree.
     let _webrootEntry = FSPeepRoot({ entrypoint: WEBROOT })
+
     if (!_webrootEntry) {
         L.log(`Couldn't resolve root directory ${WEBROOT}.`)
         return process.exit(1)
@@ -77,10 +74,11 @@ const server = createSecureServer({
 
 let buildTask = build(webrootEntry);
 
+export type BuiltStuff = { built: PukableEntrypoint[], webuke: Webuke, relent: Relent }
 type Relent = { [relpath: string]: PukableEntrypoint[] }
 type Webuke = { [webpath: string]: PukableEntrypoint }
 
-async function build(root: FSPeep, relpathToBuild?: string): Promise<{ built: PukableEntrypoint[], webuke: Webuke, relent: Relent }> {
+async function build(root: FSPeep, relpathToBuild?: string): Promise<BuiltStuff> {
 
     let _relent: Relent = {}
     const _webuke: Webuke = {}
@@ -121,7 +119,7 @@ async function build(root: FSPeep, relpathToBuild?: string): Promise<{ built: Pu
             _built.push(entrypoint)
         }
         performance.mark('b')
-        performance.measure('Built PukableEntrypoints from index files', 'a', 'b')
+        performance.measure('built in', 'a', 'b')
     } catch (e) {
         console.error(e)
         console.error("Ran into a problem building files.")
@@ -138,12 +136,17 @@ changeReceiver.addEventListener("message", async (ev: MessageEvent) => {
     if (mode == "change") {
         buildTask = build(webrootEntry, relpath)
 
-        buildTask.then(builtEntrypoints => {
-            enqueueReplRepr = builtEntrypoints
-            changeTransmitter.postMessage(`built ${relpath}`)
+        buildTask.then(({ built, relent, webuke }) => {
+            enqueueReplRepr = built
+            changeTransmitter.postMessage(`repl ${relpath}`)
+
+            let webpaths = relent[relpath]?.map(x => x.ownLink.webpath) || []
+            for (let wp of webpaths) {
+                changeTransmitter.postMessage(`webChanged ${wp}`)
+            }
         })
 
-    } else if (mode == 'built' && (relpath === enqueueReplRepr)) {
+    } else if (mode == 'repl' && (relpath === enqueueReplRepr)) {
         let { relent } = await buildTask
         let builtPoints = relent[relpath]
 
@@ -201,6 +204,7 @@ server.on('stream', async (stream, headers) => {
                 'content-type': 'text/html; charset=utf-8',
                 ':status': 404,
             });
+            L.warn(`Sending 404 for file request: ${path}.`);
             stream.write('404 Not Found')
             stream.end()
             return
@@ -223,6 +227,8 @@ server.on('stream', async (stream, headers) => {
             'content-type': 'text/html; charset=utf-8',
             ':status': 404,
         });
+
+        L.warn(`Sending 404: Request: ${path} not known to any path.`);
         stream.write('404 Not Found')
         stream.end()
         return
@@ -258,15 +264,14 @@ const websocket = createServer({
 }, async (socket: Socket & { id?: number }) => {
     let accept;
 
-    let { relent } = await buildTask
-    changeset.addSocket(socket, relent)
+    changeset.addSocket(socket)
 
     socket.addListener("error", (e) => {
         changeReceiver.removeListener("message", changeset.listeners[socket.id].cb)
-        console.log('------------')
-        console.error(e.message)
-        console.error(e.cause)
-        console.log('------------')
+        L.log('------------\n')
+        L.error(e.message + '\n')
+        L.error(e.cause + '\n')
+        L.log('------------\n')
     })
 
     socket.addListener("close", () => {

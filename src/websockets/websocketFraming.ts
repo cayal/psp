@@ -2,6 +2,7 @@ import { PukableEntrypoint } from "../pukables/entrypoints"
 import { MessagePort } from "worker_threads"
 import { L } from "../fmt/logging"
 import { Socket } from "net"
+import { BuiltStuff } from "../../server"
 
 const DEBUG_TIMEOUTS = false
 const DEBUG_CONNECTIONS = false
@@ -186,7 +187,8 @@ export function WSChangeset(changeReceiver: MessagePort) {
         }
     }
 
-    function _addSocket(socket: Socket & { id?: number }, relpathsToPukers: { [rp: string]: PukableEntrypoint[] }) {
+    function _addSocket(socket: Socket & { id?: number }) {
+
         for (let i = 0; i < buildListeners.length; i++) {
             const { sk, cb, lastPongTime } = buildListeners[i]
             if (sk.destroyed || ((Date.now() - lastPongTime) > (_interval + _deadline))) {
@@ -203,21 +205,17 @@ export function WSChangeset(changeReceiver: MessagePort) {
             buildListeners[socket.id] = {
                 lastPongTime: Date.now(),
                 sk: socket,
-                cb: (ev: Event & { data: string }) => {
+                cb: async (ev: Event & { data: string }) => {
                     let [mode, pName] = ev.data.split(" ")
 
                     if (DEBUG_CONNECTIONS) { L.log(`(Sock#${socket.id}) | Received ${ev.data} event.\n`) }
 
-                    if (mode == "built") {
-                        const pukerDatas = relpathsToPukers[pName]
-                        console.log(pukerDatas)
-                        for (let p of pukerDatas) {
-                            let wp = `changed ${p.ownLink.webpath}`
+                    if (mode == "webChanged") {
+                        let wp = `changed ${pName}`
 
-                            if (DEBUG_CONNECTIONS) { L.log(`(Sock#${socket.id}) | -> '${wp}'\n`) }
+                        if (DEBUG_CONNECTIONS) { L.log(`(Sock#${socket.id}) | -> '${wp}'\n`) }
 
-                            socket.write(prepareFrame(wp))
-                        }
+                        socket.write(prepareFrame(wp))
                     }
                 }
             }

@@ -4,11 +4,12 @@ type fEB = (_: string) => RegExpMatchArray | boolean | null
 type fEL = (_: string) => number
 type Range = { start: number, end?: number, innerStart?: number, innerEnd?: number }
 
-export function ModalCharGaze(con: string, 
-    enterSeq: string | RegExp, 
+export function ModalCharGaze(con: string,
+    enterSeq: string | RegExp,
     exitSeq: string | RegExp,
     lookaheadN?: number,
-    lookbehindN?: number
+    lookbehindN?: number,
+    limitOne: boolean = false
 ): Range[] {
     let enteredBy: fEB, exitedBy: fEB,
         enterLength: fEL, exitLength: fEL,
@@ -63,16 +64,12 @@ export function ModalCharGaze(con: string,
     }
 
     let DBG = false
-    // console.log(entryPattern?.source)
-    if (con?.includes('d6g')){
-        DBG = true
-    }
 
     const ranges: Range[] = []
     let rangeOpen = -1
     let innerRangeOpen = -1
     let depth = 0
-    for (let i = 0; i <= con.length; i++) {
+    gaze: for (let i = 0; i <= con.length; i++) {
         const lookahead = con.slice(i, Math.min(con.length, i + nLookahead))
         const lookbehind = con.slice(Math.max(0, i - nLookbehind), i)
         const entered = enteredBy(lookahead)
@@ -94,6 +91,9 @@ export function ModalCharGaze(con: string,
                 end: i,
                 ...anyInners(i, lookahead, lookbehind, rangeOpen, innerRangeOpen)
             })
+
+            if (limitOne) { break gaze }
+
             rangeOpen = -1
             innerRangeOpen = -1
         }

@@ -55,6 +55,17 @@ export type ContentCouplet =
         data: Buffer
     }
 
+
+/**
+ * This is here because the caller shouldn't depend on 
+ * manually disconnecting the listeners created by 
+ * fs.watch(), and they won't automatically disconnect.
+ *
+ * @global
+ * @var {{[relpath]: FSWatcher}} WATCH_LISTENER_MAP
+ */
+const PATH_WATCH_MAP = {}
+
 export function FSPeepRoot(o: FSPeepOpts): FSPeep & Dimp {
     const peepent = FSPeep(o)
     if (!(peepent.imp === 'd')) { throw new TypeError('FSPeepRoot entrypoint must be a directory.') }
@@ -96,6 +107,8 @@ function Dimp(basis: FSPbv, changeTransmitter?: MessagePort): FSPbv & Dimp {
         data: readdirSync(basis.relpath)
     }
 
+    let _descendants
+
     const dimp: FSPbv & Dimp = {
         imp: 'd',
         abspath: basis.abspath,
@@ -115,9 +128,13 @@ function Dimp(basis: FSPbv, changeTransmitter?: MessagePort): FSPbv & Dimp {
     }
 
     function _getDescendantsd() {
-        dimp.contents.data = readdirSync(basis.relpath)
-        let x = dimp.contents.data.map(subEntry => FSPeep({ entrypoint: subEntry, from: dimp }))
-        return x
+        let currentDirCon = readdirSync(basis.relpath)
+        if ((currentDirCon === _contents.data) && _descendants) {
+            return _descendants
+        }
+
+        dimp.contents.data = currentDirCon
+        return dimp.contents.data.map(subEntry => FSPeep({ entrypoint: subEntry, from: dimp }))
     }
 
     function* _reprd(depth = 0) {
@@ -200,29 +217,56 @@ function Dimp(basis: FSPbv, changeTransmitter?: MessagePort): FSPbv & Dimp {
         return match.getRelative(subpath)
     }
 
-    let _watcher: FSWatcher;
-    let _port: MessagePort
 
     function _connectWatcherToPort(port: MessagePort, lastTransmits = {}) {
         if (!port) {
             throw new ReferenceError("Port required to receive change messages.")
         }
 
-        if (_watcher) { return _watcher }
-        _port = port
+        let ownWatcher = PATH_WATCH_MAP[dimp.relpath]
 
-        let ws = _getWatchSetd(_port)
+        if (ownWatcher) {
+            L.log(`Reusing FS watcher for ${dimp.relpath}...\n`)
+            return
+        }
+
+        L.log(`Connecting new FS watcher to ${dimp.relpath}...\n`)
+
+        let ws = _getWatchSetd(port)
         for (let subw of ws) {
             if (subw.recurse) {
-                subw.recurse(_port, lastTransmits)
+                subw.recurse(port, lastTransmits)
             }
         }
 
-        _watcher = watch(dimp.relpath, { persistent: false, recursive: false }, (x, filename) => {
+        PATH_WATCH_MAP[dimp.relpath] = watch(dimp.relpath, { persistent: false, recursive: false }, (x, filename) => {
             let changePath = join(dimp.relpath, filename ?? '')
+            if (!changePath) {
+                L.log(`${dimp.relpath}: Received empty change event.`)
+                return
+            }
+
             L.log(`(${dimp.relpath}/)${filename} changed on disk. \n`)
-            if (!existsSync(join(dimp.relpath, filename))) {
-                L.log(`(${dimp.relpath}/)${filename} is no more. \n`)
+            for (let subw of ws) {
+                if (!existsSync(subw.relpath)) {
+                    if (PATH_WATCH_MAP[subw.relpath]) {
+                        subw.disconnect()
+                    }
+                }
+            }
+
+            dimp.getDescendants()
+
+            if (!existsSync(changePath)) {
+                L.log(`${dimp.relpath}: Posting 'deleted ${changePath}'. \n`)
+                delete lastTransmits[changePath]
+                port.postMessage(`deleted ${changePath}`)
+                return
+            }
+
+            if (statSync(changePath).isDirectory()) {
+                // Let the descendant handle it.
+                L.log(`Silently doing nothing.`)
                 return
             }
 
@@ -231,33 +275,39 @@ function Dimp(basis: FSPbv, changeTransmitter?: MessagePort): FSPbv & Dimp {
             if (delta > 100) {
                 L.log(`T+${delta.toFixed(2)} | ${dimp.relpath}: Posting 'change ${changePath}'. \n`)
                 lastTransmits[changePath] = performance.now()
-                _port.postMessage(`change ${changePath}`)
+                port.postMessage(`change ${changePath}`)
             }
         })
     }
 
+    let _watched;
     function _getWatchSetd(ct: MessagePort) {
-        type Q = { key?: string, recurse?: (Dimp["connectWatcher"]) | false }
+        type Q = {
+            relpath?: string,
+            recurse?: (Dimp["connectWatcher"]) | false,
+            disconnect?: () => void
+        }
         let x: Q[] = dimp.fApply(fst => (
-            fst !== dimp
-                ? {
-                    key: fst.path.base,
-                    recurse: fst.imp == 'd' ? fst.connectWatcher : false
-                }
-                : {}))
-        return new Set<Q>(x)
+            {
+                relpath: fst.relpath,
+                recurse: fst.imp == 'd' ? fst.connectWatcher : false as const,
+                disconnect: fst.imp == 'd' ? fst.disconnectWatcher : () => { }
+            })).filter(d => d.relpath !== dimp.relpath)
+
+        _watched = new Set<Q>(x)
+        return _watched
     }
 
     function _disconnectWatcher() {
-        if (!existsSync(dimp.relpath)) {
-            return
+        console.log(PATH_WATCH_MAP)
+        L.log(`Requested disconnect of watcher ${dimp.relpath}...\n`)
+        PATH_WATCH_MAP[dimp.relpath]?.close()
+        delete PATH_WATCH_MAP[dimp.relpath]
+
+        for (let w of _watched) {
+            w.disconnect()
         }
 
-        if (_watcher) {
-            _watcher.close()
-        }
-
-        dimp.fApply(fst => { if (fst !== dimp && fst.imp === 'd') fst.disconnectWatcher() })
         return
     }
 

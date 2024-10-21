@@ -84,7 +84,7 @@ export const PP = (function() {
             c = UNDSYM
         } else if (c === '\n') {
             return padded(RETSYM, w+1)
-        } else if (c === ' ') {
+        } else if (c === ' ' && w > 1) {
             c = SPCSYM
         } else {
             c = c.toString()

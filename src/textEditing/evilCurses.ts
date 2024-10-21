@@ -33,6 +33,7 @@ export type DJOpts = {
     encompass?: boolean,
     lookaheadN?: number,
     lookbehindN?: number
+    limitOne?: boolean
 }
 
 export type CLOCPointer = { voice: string, sigils: string[], truth: number, linenoTruth: number }
@@ -115,6 +116,10 @@ export class CursedDataGazer {
         this.#memory = ShatOps.intrude(this.#memory, start, intrusion, sigils)
         this.#invalidateLenses()
         return this.#memory
+    }
+
+    getVoiceAt(location: number): string {
+        return this.#memory.getVoiceAt(location)
     }
 
     /**
@@ -500,9 +505,10 @@ export class CursedDataGazer {
             sigil,
             encompass = true,
             lookaheadN,
-            lookbehindN
+            lookbehindN,
+            limitOne = false
         }: DJOpts) {
-            const ranges = ModalCharGaze(this.image, entryPattern, exitPattern, lookaheadN, lookbehindN)
+            const ranges = ModalCharGaze(this.image, entryPattern, exitPattern, lookaheadN, lookbehindN, limitOne)
 
             let retVal = [];
             for (let r of ranges.reverse()) {
@@ -840,14 +846,28 @@ export function ShatteredMemory({ content, sigils = Sigils(), confabulated }: Sh
 
     function _getVo(i: number) {
         _nooob(i)
-        const utfb = _dv.getUint32(i * BYTES_PER_V)
-        return _dec.decode(Uint8Array.from([utfb])).replace(/\0/g, '')
+
+        const utfu32 = _dv.getUint32(i * BYTES_PER_V)
+
+        const ubytes = Array(4).fill(0).map((_, i) => (utfu32 >> (3 - i) * 8) & (0b11111111))
+
+        return _dec.decode(Uint8Array.from(ubytes)).replace(/\0/g, '')
     }
 
     function _setVo(i: number, char: string) {
         _nooob(i)
+
         if (char.length > 1) { return new TypeError('c should be one character.') }
-        _dv.setUint32(i * BYTES_PER_V, _enc.encode(char) as unknown as number)
+
+        const ubytes = _enc.encode(char)
+
+        // Padding the results < 4 bytes left to 4 e.g. [a, b] -> [0, 0, a, b]
+        const quplet = Array(4).fill(0).map((_, i) => BigInt(ubytes[i - (4 - ubytes.length)] ?? 0))
+
+        // Doing the bit math in BigInt to preserve integer representation
+        const qupu32 = quplet.reduceRight((n, byte, i) => n + (byte << (BigInt(3 - i) * 8n)), 0n)
+
+        _dv.setUint32(i * BYTES_PER_V, Number(qupu32))
     }
 
     function _setSi(i, sigil, unset = false) {

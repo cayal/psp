@@ -313,6 +313,7 @@ export class PukableSlotPocket {
             let { presence, entry, exit } = PukableSlotPocket.getBurpPatterns(slurpN.as)
 
             let match;
+
             // Warn if there's a declared burp in a slurp that goes unused.
             if (!(match = this.#juiceLens.image.match(presence))) {
                 const vmsg = `Lint: Unused burp: <${slurpN.as}>`
@@ -338,11 +339,12 @@ export class PukableSlotPocket {
                 lookaheadN: 512,
                 lookbehindN: 512
             })
-            debugger;
 
             for (let { chars, startSourceOffset, endSourceOffset, startSourceLine } of slurpNburpBlocks) {
+
                 let openTag = chars.match(entry)[0]
                 let closeTag = chars.match(exit)[0]
+
                 let id = openTag.match(/id=["']([^'"]+)["']/)
                 let idAttr = id?.[1] || ''
                 let tagName = slurpN.as
@@ -388,17 +390,22 @@ export class PukableSlotPocket {
 
         for (let { startTruth, endTruth, groups } of [...bubbleOpenings]) {
             let containingBurp
-            if (!(containingBurp = this.#rawBurps.find(b => (b.sourceStart <= startTruth) && (b.sourceEnd >= endTruth)))) {
+            if (!(containingBurp = this.#rawBurps.find(b =>
+                (b.sourceStart <= startTruth) && (b.sourceEnd >= endTruth)
+            ))) {
             } else {
                 const bubbleOpeningTag = groups[0]
                 const bubbleTagName = groups[1]
                 const bubbleClosingTagPattern = new RegExp(`</${bubbleTagName}\\s*>$`)
 
-                const [{ startSourceLine, chars }] = this.#juiceLens.dichotomousJudgement({
+                const bubbleDecls = this.#juiceLens.dichotomousJudgement({
                     entryPattern: bubbleOpeningTag,
                     exitPattern: bubbleClosingTagPattern,
-                    lookbehindN: REASONABLE_TAG_LENGTH
+                    lookbehindN: REASONABLE_TAG_LENGTH,
+                    limitOne: true
                 })
+
+                const [{ startSourceLine, chars }] = bubbleDecls
 
                 this.#rawBubbles.push({
                     sourceLineno: startSourceLine,

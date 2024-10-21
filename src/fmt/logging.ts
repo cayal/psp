@@ -23,6 +23,11 @@ export const L = (() => {
         error: async (...a) => {
             const s = a.map(aa => typeof aa !== 'string' ? format(aa) : a)
             writer.next('\x1b[31m' + s.join('\t') + '\x1b[0m')
+        },
+
+        warn: async (...a) => {
+            const s = a.map(aa => typeof aa !== 'string' ? format(aa) : a)
+            writer.next('\x1b[33m' + s.join('\t') + '\x1b[0m')
         }
     }
 })()
